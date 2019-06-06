@@ -9,7 +9,7 @@
 
     <groupId>com.wegas</groupId>
     <artifactId>wegas-project</artifactId>
-    <version>4.0-SNAPSHOT</version>
+    <version>4.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <modules>
         <module>wegas-core</module>
@@ -92,7 +92,7 @@
         <wegas.useYUICDN>false</wegas.useYUICDN>
 
         <shiro.version>1.4.0</shiro.version>
-        <jdk.version>1.8</jdk.version>
+        <jdk.version>11</jdk.version>
         <payara.version>5.192</payara.version>
         <payara-api.version>5.192</payara-api.version>
         <junit.version>4.12</junit.version>
@@ -100,8 +100,9 @@
         <exec.plugin.version>1.2</exec.plugin.version>
 
         <jackson.version>2.9.8</jackson.version>
-        <jersey.version>2.28</jersey.version>
+        <jersey.version>2.29.payara-p2</jersey.version>
         <eclipselink.version>2.7.4</eclipselink.version>
+        <eclipselink.payara.version>2.7.4.payara-p2</eclipselink.payara.version>
 
         <profile.dependent.scope>compile</profile.dependent.scope>
 
@@ -414,7 +415,7 @@
             <dependency>
                 <groupId>org.eclipse.persistence</groupId>
                 <artifactId>org.eclipse.persistence.core</artifactId>
-                <version>${eclipselink.version}</version>
+                <version>${eclipselink.payara.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
@@ -683,8 +684,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>${jdk.version}</source>
+                    <target>${jdk.version}</target>
                 </configuration>
             </plugin>
 
@@ -883,6 +884,34 @@
         </repository>
     </repositories>
     -->
+
+    <repositories>
+        <!-- Try Maven central first, not last, which happens when omitted here -->
+        <repository>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <id>central</id>
+            <name>Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+
+
+        
+        <repository>
+            <id>payara-patched-externals</id>
+            <name>Payara Patched Externals</name>
+            <url>https://raw.github.com/payara/Payara_PatchedProjects/master</url>
+            <!--<url>file:///opt/PayaraDev/Payara_PatchedProjects</url>-->
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+
+    </repositories>
 
     <pluginRepositories>
         <!--<pluginRepository>

@@ -33,8 +33,6 @@ import com.wegas.core.security.persistence.User;
 import com.wegas.core.security.util.WegasEntityPermission;
 import com.wegas.core.security.util.WegasMembership;
 import com.wegas.core.security.util.WegasPermission;
-import jdk.nashorn.api.scripting.ScriptUtils;
-import jdk.nashorn.internal.runtime.ScriptObject;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.UnavailableSecurityManagerException;
 import org.apache.shiro.mgt.DefaultSecurityManager;
@@ -60,6 +58,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jdk.nashorn.api.scripting.ScriptUtils;
 
 /**
  * @author Francois-Xavier Aeberhard (fx at red-agent.com)
@@ -640,7 +639,7 @@ public class RequestManager implements RequestManagerI {
     public void sendCustomEvent(String type, Object payload) {
         // @hack check payload type against "jdk.nashorn.internal"
         if (payload.getClass().getName().startsWith("jdk.nashorn.internal")) {
-            this.addEvent(new CustomEvent(type, ScriptUtils.wrap((ScriptObject) payload)));
+            this.addEvent(new CustomEvent(type, ScriptUtils.wrap(payload)));
         } else {
             this.addEvent(new CustomEvent(type, payload));
         }
