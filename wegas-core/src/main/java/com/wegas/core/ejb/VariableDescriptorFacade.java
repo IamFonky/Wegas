@@ -213,12 +213,29 @@ public class VariableDescriptorFacade extends BaseFacade<VariableDescriptor> imp
      * @param propagate indicate whether default instance should be propagated
      */
     public void shallowRevive(GameModel gameModel, VariableDescriptor entity, boolean propagate) {
+        AbstractScope newScope = null;
+
+        if (entity.getDeserialisedScopeType() != null) {
+            newScope = AbstractScope.build(entity.getDeserialisedScopeType(), entity.getDeserialisedBroadcastScopeType());
+            entity.setScopeType(null);
+            entity.setBroadcastScope(null);
+
+            AbstractScope scope = entity.getScope();
+            if (scope != null) {
+                if (scope.getClass().equals(newScope.getClass())) {
+                    scope.setBroadcastScope(newScope.getBroadcastScope());
+                } else {
+                    this.updateScope(entity, newScope);
+                }
+            } else {
+                entity.setScope(newScope);
+                propagate = true;
+            }
+        }
+
         if (entity.getScope() == null) {
             entity.setScope(new TeamScope());
             propagate = true;
-        } else if (entity.getScope().getShouldCreateInstance()) {
-            propagate = true;
-            entity.getScope().setShouldCreateInstance(false);
         }
 
         if (entity instanceof ListDescriptor) {
@@ -267,20 +284,14 @@ public class VariableDescriptorFacade extends BaseFacade<VariableDescriptor> imp
     }
 
     public void reviveDialogue(GameModel gameModel, DialogueDescriptor dialogueDescriptor) {
-        for (State s : dialogueDescriptor.getStates()) {
-            if (s instanceof DialogueState) {
-                DialogueState ds = (DialogueState) s;
-                if (ds.getText() != null) {
-                    ds.getText().setParentDescriptor(dialogueDescriptor);
-                }
+        for (DialogueState s : dialogueDescriptor.getInternalStates()) {
+            if (s.getText() != null) {
+                s.getText().setParentDescriptor(dialogueDescriptor);
             }
 
-            for (Transition t : s.getTransitions()) {
-                if (t instanceof DialogueTransition) {
-                    DialogueTransition dt = (DialogueTransition) t;
-                    if (dt.getActionText() != null) {
-                        dt.getActionText().setParentDescriptor(dialogueDescriptor);
-                    }
+            for (DialogueTransition t : s.getTransitions()) {
+                if (t.getActionText() != null) {
+                    t.getActionText().setParentDescriptor(dialogueDescriptor);
                 }
             }
         }
@@ -344,6 +355,7 @@ public class VariableDescriptorFacade extends BaseFacade<VariableDescriptor> imp
         }
     }
 
+    @Deprecated
     public void flushAndreviveItems(GameModel gameModel, DescriptorListI entity, boolean propagate) {
         this.reviveItems(gameModel, entity, propagate);
     }
