@@ -241,6 +241,11 @@ public class RequestManager implements RequestManagerI {
     private Long exceptionCounter = 0L;
 
     /**
+     * List of all updated gameModelContent
+     */
+    private List<GameModelContent> updatedGameModelContent = new ArrayList<>();
+
+    /**
      * Contains all updated entities
      */
     private Map<String, List<AbstractEntity>> updatedEntities = new HashMap<>();
@@ -581,6 +586,16 @@ public class RequestManager implements RequestManagerI {
      */
     public Map<String, List<AbstractEntity>> getUpdatedEntities() {
         return updatedEntities;
+    }
+
+    public void addUpdatedGameModelContent(GameModelContent gmContent) {
+        if (gmContent != null && !updatedGameModelContent.contains(gmContent)) {
+            updatedGameModelContent.add(gmContent);
+        }
+    }
+
+    public List<GameModelContent> getUpdatedGameModelContent() {
+        return updatedGameModelContent;
     }
 
     /**
@@ -1311,7 +1326,7 @@ public class RequestManager implements RequestManagerI {
                 return this.hasGameModelPermission(gameModel, perm);
             case GAME:
                 Game game = gameFacade.find(perm.getId());
-                return this.hasGamePermission(game, perm.getLevel() == WegasEntityPermission.Level.WRITE) 
+                return this.hasGamePermission(game, perm.getLevel() == WegasEntityPermission.Level.WRITE)
                         || this.hasGameModelTranslateRight(game.getGameModel());
             case TEAM:
                 Team team = teamFacade.find(perm.getId());

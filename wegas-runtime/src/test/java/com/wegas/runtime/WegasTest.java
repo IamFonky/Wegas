@@ -5,7 +5,7 @@
  * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
-package com.wegas.integration;
+package com.wegas.runtime;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.gargoylesoftware.htmlunit.WebClient;
@@ -21,12 +21,22 @@ import com.wegas.core.security.persistence.User;
 import com.wegas.test.TestHelper;
 import com.wegas.utils.WegasRESTClient;
 import com.wegas.utils.WegasRESTClient.TestAuthenticationInformation;
+import java.io.File;
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.logging.Level;
-import org.glassfish.embeddable.GlassFishException;
+import org.jboss.arquillian.container.test.api.Deployment;
+import org.jboss.arquillian.container.test.api.TargetsContainer;
+import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.importer.ExplodedImporter;
+import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
@@ -34,6 +44,7 @@ import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestName;
+import org.junit.runner.RunWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,6 +52,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author maxence
  */
+@RunWith(Arquillian.class)
 public class WegasTest {
 
     @Rule
@@ -48,28 +60,50 @@ public class WegasTest {
 
     private static final String WEGAS_ROOT_DIR = "../wegas-app/";
 
-    private static Wegas.WegasRuntime runtime;
-
     private static final Logger logger = LoggerFactory.getLogger(WegasTest.class);
 
     private static WegasRESTClient client;
+
+    private static WegasRESTClient client2;
 
     private static TestAuthenticationInformation root;
     private static TestAuthenticationInformation scenarist;
     private static TestAuthenticationInformation trainer;
     private static TestAuthenticationInformation user;
 
-    private GameModel artos;
+    GameModel artos;
 
-    //private static Logger logger = LoggerFactory.getLogger(WegasTest.class);
+    @Deployment(name = "wegas1")
+    //@OverProtocol("Local")
+    @TargetsContainer("payara1")
+    public static WebArchive deployFirst() {
+        return createDeployment();
+    }
+
+    @Deployment(name = "wegas2")
+    //@OverProtocol("Local")
+    @TargetsContainer("payara2")
+    public static WebArchive deploySecond() {
+        return createDeployment();
+    }
+
+    public static WebArchive createDeployment() {
+        WegasRuntime.resetDB("wegas_test");
+        String warPath;
+        warPath = "../wegas-app/target/Wegas";
+
+        WebArchive war = ShrinkWrap.create(ExplodedImporter.class)
+                .importDirectory(new File(warPath))
+                .as(WebArchive.class);
+
+        return war;
+    }
+
     @BeforeClass
     public static void setUpClass() {
-
         try {
-            runtime = Wegas.boot("wegas_test", "localhost", null, true, 8280);
-            //Wegas.WegasRuntime runtime2 = Wegas.boot("wegas_test", "localhost", null, true, 8281);
-
-            client = new WegasRESTClient(runtime.getBaseUrl());
+            client = new WegasRESTClient("http://localhost:28080/Wegas");
+            client2 = new WegasRESTClient("http://localhost:28080/Wegas");
 
             scenarist = client.signup("scenarist@local", "1234");
             trainer = client.signup("trainer@local", "1234");
@@ -80,35 +114,32 @@ public class WegasTest {
 
             client.login(root);
             grantRights();
-            logger.error("SETUP COMPLETED");
+            logger.info("SETUP COMPLETED");
         } catch (IOException ex) {
             java.util.logging.Logger.getLogger(WegasTest.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (GlassFishException ex) {
-            java.util.logging.Logger.getLogger(WegasTest.class.getName()).log(Level.SEVERE, null, ex);
         }
-    }
 
-    @AfterClass
-    public static void tearDownClass() throws Exception {
-        logger.error("AfterCLASS");
-        Wegas.shutdown(runtime);
     }
 
     @Before
     public void setUp() throws IOException {
-        logger.error("TEST {}", name.getMethodName());
-        logger.error("LOGIN as root");
+        logger.info("TEST {}", name.getMethodName());
+        logger.info("LOGIN as root");
         client.login(root);
         client.get("/rest/Utils/SetPopulatingSynchronous");
         loadArtos();
     }
 
+    @AfterClass
+    public static void tearDownClass() throws Exception {
+    }
+
     private static void grantRights() throws IOException {
         Map<String, Role> roles = client.getRoles();
 
-        logger.error("ROLES: ");
+        logger.info("ROLES: ");
         for (Entry<String, Role> entry : roles.entrySet()) {
-            logger.error(entry.getKey());
+            logger.info(entry.getKey());
         }
 
         User scenUser = client.get("/rest/User/" + scenarist.getUserId(), User.class);
@@ -124,27 +155,35 @@ public class WegasTest {
     }
 
     private void loadArtos() throws IOException {
-        logger.error("LOAD ARTOS");
-        artos = client.postJSONFromFile("/rest/GameModel", "src/main/webapp/wegas-private/wegas-pmg/db/wegas-pmg-gamemodel-Artos.json", GameModel.class);
+        logger.info("LOAD ARTOS");
+        artos = client.postJSONFromFile("/rest/GameModel", "../wegas-app/src/main/webapp/wegas-private/wegas-pmg/db/wegas-pmg-gamemodel-Artos.json", GameModel.class);
     }
 
     @Test
     public void testDatabaseIndexes() {
-        Assert.assertEquals("Some indexes are missing. Please create liquibase changesets. See log for details", 0, TestHelper.getMissingIndexesCount());
+        final String DB_CON = "jdbc:postgresql://localhost:5432/wegas_test";
+        final String USER = "user";
+        final String PASSWORD = "1234";
+        try (Connection connection = DriverManager.getConnection(DB_CON, USER, PASSWORD);
+                Statement st = connection.createStatement()) {
+            Assert.assertEquals("Some indexes are missing. Please create liquibase changesets. See log for details",
+                    0, TestHelper.getMissingIndexesCount(st));
+        } catch (SQLException ex) {
+        }
     }
 
     @Test
     public void testStandardProcess() throws IOException {
-        logger.error("root share to Scenarist");
+        logger.info("root share to Scenarist");
         client.login(root);
         client.post("/rest/User/ShareGameModel/" + artos.getId() + "/View,Edit,Delete,Instantiate,Duplicate/" + scenarist.getAccountId(), null);
 
-        logger.error("scenarist share to trainer");
+        logger.info("scenarist share to trainer");
         client.login(scenarist);
         List<GameModel> gameModels = client.get("/rest/GameModel/status/LIVE", new TypeReference<List<GameModel>>() {
         });
 
-        logger.error("# gamemodels scen:" + gameModels.size());
+        logger.info("# gamemodels scen:" + gameModels.size());
         Assert.assertEquals(2, gameModels.size()); // Artos  + _empty
         client.post("/rest/User/ShareGameModel/" + artos.getId() + "/Instantiate/" + trainer.getAccountId(), null);
 
@@ -152,7 +191,7 @@ public class WegasTest {
 
         gameModels = client.get("/rest/GameModel/status/LIVE", new TypeReference<List<GameModel>>() {
         });
-        logger.error("# gamemodels trainer:" + gameModels.size());
+        logger.info("# gamemodels trainer:" + gameModels.size());
         // Get
         Assert.assertEquals(2, gameModels.size()); // artos +empty
 
@@ -193,16 +232,15 @@ public class WegasTest {
 
     @Test
     public void testUpdateAndCreateGame() throws IOException {
-        GameModel myGameModel = client.postJSONFromFile("/rest/GameModel", "src/test/resources/gmScope.json", GameModel.class);
+        GameModel myGameModel = client.postJSONFromFile("/rest/GameModel", "../wegas-app/src/test/resources/gmScope.json", GameModel.class);
         Game myGame = client.postJSON_asString("/rest/GameModel/" + myGameModel.getId() + "/Game", "{\"@class\":\"Game\",\"gameModelId\":\"" + myGameModel.getId() + "\",\"access\":\"OPEN\",\"name\":\"My Test Game\"}", Game.class);
         myGame.getId();
     }
 
-
     @Test
     public void testModeliseStateMachine() throws IOException {
-        GameModel gm1 = client.postJSONFromFile("/rest/GameModel", "src/test/resources/fsm.json", GameModel.class);
-        GameModel gm2 = client.postJSONFromFile("/rest/GameModel", "src/test/resources/fsm.json", GameModel.class);
+        GameModel gm1 = client.postJSONFromFile("/rest/GameModel", "../wegas-app/src/test/resources/fsm.json", GameModel.class);
+        GameModel gm2 = client.postJSONFromFile("/rest/GameModel", "../wegas-app/src/test/resources/fsm.json", GameModel.class);
 
         // create model
         GameModel model = client.postJSON_asString("/rest/GameModel/extractModel/" + gm1.getId() + "," + gm2.getId(),
@@ -231,7 +269,7 @@ public class WegasTest {
         descs = (List<VariableDescriptor>) (client.get("/rest/GameModel/" + this.artos.getId() + "/VariableDescriptor", new TypeReference<List<VariableDescriptor>>() {
         }));
 
-        Assert.assertTrue("Seems there is not enough descritpr here...", descs.size() > 10);
+        Assert.assertTrue("Seems there is not enough descriptor here...", descs.size() > 10);
     }
 
     @Test
@@ -242,9 +280,9 @@ public class WegasTest {
     }
 
     @Test
-    public void hello() throws GlassFishException, IOException {
+    public void hello() throws IOException {
         WebClient webClient = new WebClient();
-        final HtmlPage page = webClient.getPage(runtime.getBaseUrl() + "/login.html?debug=true");
+        final HtmlPage page = webClient.getPage(client.getBaseURL() + "/login.html?debug=true");
 
         Assert.assertEquals(200, page.getWebResponse().getStatusCode());
 
@@ -262,7 +300,7 @@ public class WegasTest {
         webClient.getOptions().setJavaScriptEnabled(true);
 
         //webClient.setAjaxController(new NicelyResynchronizingAjaxController());
-        HtmlPage page = webClient.getPage(runtime.getBaseUrl() + "/wegas-app/tests/wegas-alltests.htm");
+        HtmlPage page = webClient.getPage(client.getBaseURL() + "/wegas-app/tests/wegas-alltests.htm");
         //webClient.waitForBackgroundJavaScriptStartingBefore(30000);
 
         Assert.assertEquals("Wegas Test Suite", page.getTitleText());
@@ -272,7 +310,7 @@ public class WegasTest {
         String pContent = domPassed.getTextContent();
         String tContent = domTotal.getTextContent();
 
-        logger.error("TESTS:  " + pContent + "/" + tContent);
+        logger.info("TESTS:  " + pContent + "/" + tContent);
     }
 
 }
