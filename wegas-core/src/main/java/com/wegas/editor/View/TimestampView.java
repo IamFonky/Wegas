@@ -10,5 +10,10 @@ package com.wegas.editor.View;
 /**
  * @author maxence
  */
-public class ReadOnlyString extends StringView implements ReadOnlyView {
+public class TimestampView extends CommonView {
+
+    @Override
+    public String getType() {
+        return "timestamp";
+    }
 }
