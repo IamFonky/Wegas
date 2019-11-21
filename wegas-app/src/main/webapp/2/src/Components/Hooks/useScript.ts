@@ -9,6 +9,7 @@ import { useGameModel } from './useGameModel';
 import { Actions } from '../../data';
 import * as ts from 'typescript';
 import { classesCTX } from '../Contexts/ClassesProvider';
+import {ScriptContext} from '../Contexts/ScriptContext';
 
 interface GlobalVariableClass {
   find: <T extends IVariableDescriptor>(
@@ -24,6 +25,9 @@ interface GlobalClasses {
   Methods: GlobalMethodClass;
   Schemas: GlobalSchemaClass;
   Classes: GlobalClassesClass;
+  Context: {
+      [name: string]: any;
+  };
 }
 
 const sandbox = document.createElement('iframe');
@@ -137,6 +141,11 @@ export function useGlobals() {
   };
 }
 
+function useScriptContext(){
+    const {identifiers } = React.useContext(ScriptContext);
+    globals.Context = identifiers;
+}
+
 export function clientScriptEval<ReturnValue>(script: string) {
   return (
     ((sandbox.contentWindow as unknown) as {
@@ -180,6 +189,7 @@ export function clientScriptEval<ReturnValue>(script: string) {
  */
 export function useScript<ReturnValue>(script: string) {
   useGlobals();
+  useScriptContext();
   const fn = useCallback(
     () => clientScriptEval<ReturnValue>(ts.transpile(script)), // 'undefined' so that an empty script don't return '"use strict"'
     [script],
