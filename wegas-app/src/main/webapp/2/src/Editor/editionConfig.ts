@@ -1,11 +1,17 @@
 import { Schema } from 'jsoninput';
-import { AvailableViews } from './Components/FormView';
-import { formValidation } from './formValidation';
+import { TYPESTRING } from 'jsoninput/typings/types';
+import {
+  IAbstractEntity,
+  SAbstractEntity,
+  IMergeable,
+  WegasClassNames,
+} from 'wegas-ts-api';
 import { entityIs } from '../data/entities';
 import { editStateMachine, editVariable } from '../data/Reducer/globalState';
-import { ThunkResult } from '../data/store';
-import { TYPESTRING } from 'jsoninput/typings/types';
+import { ThunkResult } from '../data/Stores/store';
+import { AvailableViews } from './Components/FormView';
 import { Icons } from './Components/Views/FontAwesome';
+import { formValidation } from './formValidation';
 
 export type WegasTypeString = TYPESTRING | 'identifier';
 
@@ -103,7 +109,7 @@ async function fetchConfig(
 ): Promise<{ schema: Schema; methods: MethodConfig }> {
   return import(
     /* webpackChunkName: "Config-[request]", webpackPrefetch: true */
-    '../../../generated-schema/' + file
+    'wegas-ts-api/src/generated/schemas/' + file
   );
 }
 type formValidationSchema = Parameters<typeof formValidation>[0];
@@ -144,18 +150,19 @@ function updatedErrored(
  * Inject relative schema into a given schema (wref)
  * @param schema schema to update
  */
+
 async function injectRef(schema: { $wref?: string }): Promise<Schema> {
   const { $wref, ...restSchema } = schema;
   if (typeof $wref === 'string') {
-    const refSchema = await import('../../../generated-schema/' + $wref).then(
-      res => res.schema,
-    );
+    const refSchema = await import(
+      'wegas-ts-api/src/generated/schemas/' + $wref
+    ).then(res => res.schema);
     return { ...refSchema, ...restSchema };
   }
   return restSchema;
 }
 
-export default async function getEditionConfig<T extends IAbstractEntity>(
+export default async function getEditionConfig<T extends IMergeable>(
   entity: T,
 ): Promise<Schema> {
   return fetchConfig(entity['@class'] + '.json').then(res => {
@@ -188,20 +195,18 @@ export async function getEntityActions(
   return { edit: editVariable };
 }
 
-export async function getVariableMethodConfig<T extends IAbstractEntity>(
+export async function getVariableMethodConfig<T extends SAbstractEntity>(
   entity: T,
 ): Promise<MethodConfig> {
-  return fetchConfig(entity['@class'] + '.json').then(res =>
+  return fetchConfig(entity.getJSONClassName() + '.json').then(res =>
     methodConfigUpdater(res.methods, injectRef),
   );
 }
 
-export function getIcon<T extends IAbstractEntity>(
-  entity: T,
-): Icons | undefined {
+export function getIcon<T extends IMergeable>(entity: T): Icons | undefined {
   switch (entity['@class'] as WegasClassNames) {
     case 'ChoiceDescriptor':
-      return 'check-square';
+      return ['square', { icon: 'check-double', color: 'white', size: 'sm' }];
     case 'FSMDescriptor':
       return 'project-diagram';
     case 'ListDescriptor':
@@ -222,6 +227,8 @@ export function getIcon<T extends IAbstractEntity>(
       return 'font';
     case 'TextDescriptor':
       return 'paragraph';
+    case 'StaticTextDescriptor':
+      return ['square-full', { icon: 'paragraph', color: 'white', size: 'xs' }];
     case 'TriggerDescriptor':
       return 'random';
     case 'WhQuestionDescriptor':
@@ -247,12 +254,10 @@ export function getIcon<T extends IAbstractEntity>(
   }
 }
 
-export function getLabel<T extends IAbstractEntity>(
-  entity: T,
-): string | undefined {
+export function getLabel<T extends IMergeable>(entity: T): string | undefined {
   switch (entity['@class'] as WegasClassNames) {
     case 'ChoiceDescriptor':
-      return 'Choice';
+      return 'Conditional';
     case 'FSMDescriptor':
       return 'State Machine';
     case 'ListDescriptor':
@@ -264,7 +269,7 @@ export function getLabel<T extends IAbstractEntity>(
     case 'Result':
       return 'Result';
     case 'SingleResultChoiceDescriptor':
-      return 'Single Result Choice';
+      return 'Standard';
     case 'BooleanDescriptor':
       return 'Boolean';
     case 'ObjectDescriptor':
@@ -273,6 +278,8 @@ export function getLabel<T extends IAbstractEntity>(
       return 'String';
     case 'TextDescriptor':
       return 'Text';
+    case 'StaticTextDescriptor':
+      return 'Static text';
     case 'TriggerDescriptor':
       return 'Trigger';
     case 'WhQuestionDescriptor':
@@ -301,6 +308,7 @@ export const ListDescriptorChild = [
   'StringDescriptor',
   'ListDescriptor',
   'TextDescriptor',
+  'StaticTextDescriptor',
   'TaskDescriptor',
   'BooleanDescriptor',
   'ObjectDescriptor',
@@ -331,7 +339,7 @@ const EvaluationDescriptorContainerChild = [
 const ChoiceDescriptorChild = ['Result'] as const;
 export async function getChildren<T extends IAbstractEntity>(
   entity: T,
-): Promise<readonly string[]> {
+): Promise<readonly IAbstractEntity['@class'][]> {
   switch (entity['@class']) {
     case 'ListDescriptor':
       return ListDescriptorChild;

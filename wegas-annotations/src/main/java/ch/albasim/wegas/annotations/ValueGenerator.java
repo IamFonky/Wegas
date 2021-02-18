@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2019 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package ch.albasim.wegas.annotations;
@@ -13,7 +13,7 @@ package ch.albasim.wegas.annotations;
  */
 public interface ValueGenerator {
 
-    public static class Undefined implements ValueGenerator {
+    class Undefined implements ValueGenerator {
 
         @Override
         public Object getValue() {
@@ -21,6 +21,6 @@ public interface ValueGenerator {
         }
     }
 
-    public Object getValue();
+    Object getValue();
 
 }

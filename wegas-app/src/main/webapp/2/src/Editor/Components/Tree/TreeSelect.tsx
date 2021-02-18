@@ -2,18 +2,17 @@ import * as React from 'react';
 import TreeNode, { treeHeadStyle } from './TreeNode';
 import HandleUpDown from './HandleUpDown';
 
-export interface Item<T> {
-  label: string;
-  value: T;
+export interface Item<T> extends ClassStyleId {
+  label: React.ReactNode;
+  value?: T;
   selectable?: boolean;
   items?: Item<T>[];
-  className?: string;
 }
 
 interface TreeSelectProps<T> {
   items: Item<T>[];
   selected?: T;
-  onSelect: (item: T) => void;
+  onSelect?: (item: T) => void;
 }
 
 export function TreeSelect<T>({
@@ -34,7 +33,7 @@ export function TreeSelect<T>({
     setUpdatedItems(items);
   }, [items]);
   return (
-    <HandleUpDown selector={'.' + treeHeadStyle}>
+    <HandleUpDown selector={treeHeadStyle}>
       {[
         updatedItems.map((item, index) => (
           <TreeNode

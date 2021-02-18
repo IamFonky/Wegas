@@ -1,23 +1,27 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.admin.persistence;
 
+import com.wegas.admin.persistence.data.GameAdminTeam;
 import ch.albasim.wegas.annotations.WegasEntityProperty;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.wegas.core.Helper;
 import com.wegas.core.persistence.AbstractEntity;
 import com.wegas.core.persistence.WithPermission;
+import com.wegas.core.persistence.game.DebugTeam;
 import com.wegas.core.persistence.game.Game;
-import com.wegas.core.persistence.game.Player;
 import com.wegas.core.persistence.game.Team;
 import com.wegas.core.persistence.variable.ModelScoped.Visibility;
 import com.wegas.core.security.util.WegasMembership;
 import com.wegas.core.security.util.WegasPermission;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -25,32 +29,53 @@ import java.util.List;
 import javax.json.bind.Jsonb;
 import javax.json.bind.JsonbBuilder;
 import javax.json.bind.JsonbConfig;
-import javax.json.bind.JsonbException;
-import javax.persistence.*;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.Index;
+import javax.persistence.Lob;
+import javax.persistence.NamedQuery;
+import javax.persistence.OneToOne;
+import javax.persistence.PrePersist;
+import javax.persistence.Table;
+import javax.persistence.Temporal;
+import javax.persistence.TemporalType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
+ * To store game info required for invoicing.
+ *
  * @author Cyril Junod (cyril.junod at gmail.com)
  */
 @Entity
 @NamedQuery(name = "GameAdmin.findByGameIds",
-        query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.game.id in :ids")
+    query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.game.id in :ids")
 @NamedQuery(name = "GameAdmin.findByGame",
-        query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.game.id = :gameId")
+    query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.game.id = :gameId")
 @NamedQuery(name = "GameAdmin.findByStatus",
-        query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.status = :status ORDER BY ga.createdTime DESC")
+    query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.status = :status ORDER BY ga.createdTime DESC")
 @NamedQuery(name = "GameAdmin.GamesToDelete",
-        query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.status = com.wegas.admin.persistence.GameAdmin.Status.PROCESSED AND ga.game.status = com.wegas.core.persistence.game.Game.Status.DELETE")
+    query = "SELECT DISTINCT ga FROM GameAdmin ga WHERE ga.status = com.wegas.admin.persistence.GameAdmin.Status.PROCESSED AND ga.game.status = com.wegas.core.persistence.game.Game.Status.DELETE")
 @Table(
-        indexes = {
-            @Index(columnList = "game_id")
-        }
+    indexes = {
+        @Index(columnList = "game_id")
+    }
 )
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GameAdmin extends AbstractEntity {
 
+    private static final Logger logger = LoggerFactory.getLogger(GameAdmin.class);
     private static final long serialVersionUID = 1L;
 
     private static Jsonb jsonb = null;
+
+    private static final Type TEAMLIST_TYPE = new ArrayList<GameAdminTeam>() {
+        // static final to creat anonymous class only once
+    }.getClass().getGenericSuperclass();
 
     @Id
     @GeneratedValue
@@ -78,9 +103,6 @@ public class GameAdmin extends AbstractEntity {
 
     private String prevGameModel;
 
-    @Lob
-    private String prevPlayers;
-
     private Long prevGameId;
 
     @Lob
@@ -89,6 +111,7 @@ public class GameAdmin extends AbstractEntity {
     private Integer prevTeamCount;
 
     public GameAdmin() {
+        // empty constructor
     }
 
     public GameAdmin(Game game) {
@@ -128,8 +151,9 @@ public class GameAdmin extends AbstractEntity {
     public Game.Status getGameStatus() {
         if (this.getGame() != null) {
             return this.getGame().getStatus();
+        } else {
+            return Game.Status.SUPPRESSED;
         }
-        return Game.Status.SUPPRESSED;
     }
 
     //
@@ -140,8 +164,9 @@ public class GameAdmin extends AbstractEntity {
     public Long getGameId() {
         if (this.getGame() != null) {
             return this.getGame().getId();
+        } else {
+            return this.prevGameId;
         }
-        return this.prevGameId;
     }
 
     public Date getCreatedTime() {
@@ -160,9 +185,7 @@ public class GameAdmin extends AbstractEntity {
             this.prevTeamCount = this.getTeamCount();
 
             Jsonb mapper = getJsonb();
-            this.prevPlayers = mapper.toJson(this.getPlayers());
-
-            this.prevTeams = this.getTeams().toString();
+            this.prevTeams = mapper.toJson(this.getTeams());
 
             this.prevGameId = this.getGame().getId();
         }
@@ -171,8 +194,9 @@ public class GameAdmin extends AbstractEntity {
     public String getGameModelName() {
         if (this.getGame() != null) {
             return this.getGame().getGameModelName();
+        } else {
+            return this.getPrevGameModel();
         }
-        return this.getPrevGameModel();
     }
 //
 //    @JsonIgnore
@@ -184,8 +208,9 @@ public class GameAdmin extends AbstractEntity {
 
         if (this.getGame() != null) {
             return this.getGame().getName();
+        } else {
+            return this.getPrevName();
         }
-        return this.getPrevName();
     }
 
     //
@@ -203,55 +228,34 @@ public class GameAdmin extends AbstractEntity {
                 }
             }
             return counter;
+        } else {
+            return this.getPrevTeamCount();
         }
-        return this.getPrevTeamCount();
     }
 
     // Small optimization for getTeams():
     private static Jsonb getJsonb() {
         if (GameAdmin.jsonb == null) {
-            JsonbConfig config = new JsonbConfig().withFormatting(true);
+            JsonbConfig config = new JsonbConfig().withFormatting(false);
             GameAdmin.jsonb = JsonbBuilder.create(config);
         }
         return GameAdmin.jsonb;
     }
 
-    public List<String> getTeams() {
+    public List<GameAdminTeam> getTeams() {
         if (this.getGame() != null) {
-            final List<String> teams = new ArrayList<>();
+            final List<GameAdminTeam> teams = new ArrayList<>();
+
             for (Team t : this.getGame().getTeams()) {
-                if (t.getClass() == Team.class) { // filter debugTeam
-                    GameAdminTeam gaTeam = new GameAdminTeam(t);
-                    try {
-                        teams.add(getJsonb().toJson(gaTeam));
-                    } catch (JsonbException e) {
-                        e.printStackTrace();
-                    }
+                if (t instanceof DebugTeam == false) {
+                    teams.add(new GameAdminTeam(t));
                 }
             }
             return teams;
+        } else {
+            // Game has been deleted
+            return this.getPrevTeams();
         }
-        return this.getPrevTeams();
-    }
-
-    public List<String> getPlayers() {
-        if (this.getGame() != null) {
-            final List<Player> players = new ArrayList<>();
-            for (Team t : this.getGame().getTeams()) {
-                if (t.getClass() == Team.class) { // filter debugTeam
-                    players.addAll(t.getPlayers());
-                }
-            }
-            final List<String> playersName = new ArrayList<>();
-            for (Player p : players) {
-                playersName.add(p.getName());
-            }
-            return playersName;
-        }
-        return this.getPrevPlayers();
-    }
-
-    public void setPlayers(List<String> players) {
     }
 
     @PrePersist
@@ -260,21 +264,12 @@ public class GameAdmin extends AbstractEntity {
         this.createdTime = this.getGame().getCreatedTime();
     }
 
-    private List<String> getPrevPlayers() {
-        return getJsonb().fromJson(this.prevPlayers, ArrayList.class);
-    }
-
-    private List<String> getPrevTeams() {
-        final List<String> teams = new ArrayList<>();
-        if (this.prevTeams != null) {
-            Jsonb mapper = getJsonb();
-            ArrayList prev = mapper.fromJson(this.prevTeams, ArrayList.class);
-            for (Object p : prev) {
-                teams.add(mapper.toJson(p));
-            }
+    private List<GameAdminTeam> getPrevTeams() {
+        if (Helper.isNullOrEmpty(prevTeams)) {
+            return null;
+        } else {
+            return getJsonb().fromJson(prevTeams, TEAMLIST_TYPE);
         }
-
-        return teams;
     }
 
     private String getPrevGameModel() {
@@ -319,15 +314,13 @@ public class GameAdmin extends AbstractEntity {
     @Override
     public Visibility getInheritedVisibility() {
         return Visibility.INHERITED;
+
     }
 
     /**
      * GameAdmin status
-     * {
-     *
-     * @
      */
-    public static enum Status {
+    public enum Status {
         /**
          * Initial status, not yet processed
          */

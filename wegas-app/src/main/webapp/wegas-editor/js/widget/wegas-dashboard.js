@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /**
@@ -251,7 +251,7 @@ YUI.add('wegas-dashboard', function(Y) {
             this.get("contentBox").delegate("click", this.detailsClick, ".details__link", this);
 
             this.get("contentBox").delegate("click", this.onBooleanClick, ".bloc__boolean.toggleable", this);
-            this.get("contentBox").delegate("click", this.onTextClick, ".bloc__text", this);
+            this.get("contentBox").delegate("click", this.onTextClick, ".bloc__text.clickable", this);
 
             this.get("contentBox").delegate("click", this.onCustomizeGroupClick, ".customize-group", this);
 
@@ -620,12 +620,12 @@ YUI.add('wegas-dashboard', function(Y) {
                                     }
 
                                 } else if (def.kind === "inbox") {
-                                    o.cell.setHTML('<i class="bloc__text ' + (o.value.empty ? 'icon fa fa-comment-o"' : 'icon fa fa-commenting-o"') + ' title="Click to view"></i>');
+                                    o.cell.setHTML('<i class="bloc__text clickable ' + (o.value.empty ? 'icon fa fa-comment-o"' : 'icon fa fa-commenting-o"') + ' title="Click to view"></i>');
                                     if (o.column.valueTransformer) {
                                         o.value = o.column.valueTransformer.call(this, o.value);
                                     }
                                 } else if (def.kind === "text") {
-                                    o.cell.setHTML('<i class="bloc__text ' + (o.value.empty ? 'icon fa fa-file-o"' : 'icon fa fa-file-text-o"') + ' title="Click to view"></i>');
+                                    o.cell.setHTML('<i class="bloc__text clickable ' + (o.value.empty ? 'icon fa fa-file-o"' : 'icon fa fa-file-text-o"') + ' title="Click to view"></i>');
                                 } else {
                                     fallback = true;
                                     if (def.kind === "object") {
@@ -647,10 +647,10 @@ YUI.add('wegas-dashboard', function(Y) {
                                 } else {
                                     o.cell.setHTML("<span class=\"bloc__value no-value\"></span>");
                                 }
+                            }
 
-                                if (o.column.valueFormatter) {
-                                    o.column.valueFormatter.call(this, o.cell, o.value);
-                                }
+                            if (o.column.valueFormatter) {
+                                o.column.valueFormatter.call(this, o.cell, o.value);
                             }
                         };
                     }
@@ -960,15 +960,17 @@ YUI.add('wegas-dashboard', function(Y) {
          ** Opens a new tab where the given data is posted:
          */
         post: function(url, postData) {
-            var tabWindowId = window.open('about:blank', '_blank');
-            tabWindowId.document.title = postData.title;
-            var form = tabWindowId.document.createElement("form");
+            //var tabWindowId = window.open('about:blank', '_blank');
+            //tabWindowId.document.title = postData.title;
+            var form = window.document.createElement("form");
+            //form.setAttribute("style", 'display: none;');
             form.setAttribute("method", "post");
             form.setAttribute("action", url);
+            form.setAttribute("target", "_blank");
 
             for (var key in postData) {
                 if (postData.hasOwnProperty(key)) {
-                    var hiddenField = tabWindowId.document.createElement("input");
+                    var hiddenField = window.document.createElement("input");
                     hiddenField.setAttribute("type", "hidden");
                     hiddenField.setAttribute("name", key);
                     hiddenField.setAttribute("value", postData[key]);
@@ -976,8 +978,9 @@ YUI.add('wegas-dashboard', function(Y) {
                 }
             }
             // var btn = tabWindowId.document.createElement("button"); btn.appendChild(tabWindowId.document.createTextNode("SUBMIT")); form.appendChild(btn);
-            tabWindowId.document.body.appendChild(form);
+            window.document.body.appendChild(form);
             form.submit();
+            form.remove();
         },
         // Convert characters to HTML entities to protect against encoding issues:
         toEntities: function(text) {

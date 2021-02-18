@@ -136,7 +136,7 @@ export function methodParameterParse(node: Node | null) {
       return typeMethods.parser(node, methodParameterParse);
     }
   }
-  throw Error(`Argument's node ${JSON.stringify(node)} cannot be parsed`);
+  throw Error(`Argument's node ${node?.type} cannot be parsed`);
 }
 
 export function methodParse(
@@ -502,6 +502,19 @@ export const parseStatement = (
       },
       error,
     };
+  } else if (isEmptyStatement(statement)) {
+    if (isScriptCondition(mode)) {
+      return {
+        attributes: {
+          initExpression: {
+            type: 'boolean',
+            script: 'true',
+          },
+        },
+      };
+    } else {
+      return { attributes: {} };
+    }
   } else {
     const newAttributes = methodParse(statement, 'Variable');
     if (newAttributes) {

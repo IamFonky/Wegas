@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { css, cx } from 'emotion';
-import { IconButton } from '../../../Components/Inputs/Button/IconButton';
+import { Item } from './TreeSelect';
+import { Button } from '../../../Components/Inputs/Buttons/Button';
+import { flexRow, flex, flexColumn } from '../../../css/classes';
 
 const pointerStyle = css({
   cursor: 'pointer',
@@ -90,17 +92,14 @@ function update<T>(
     ...val,
   };
 }
-interface TreeNodeProps<T> {
-  label: string;
-  value: T;
+interface TreeNodeProps<T> extends Item<T> {
+  value?: T;
   expanded?: boolean;
   selected?: T;
-  selectable?: boolean;
   match?: boolean;
   items?: TreeNodeProps<T>[];
   onSelect?: (item: T) => void;
   onChange?: (props: TreeNodeProps<T>) => void;
-  className?: string;
 }
 export default function TreeNode<T>(props: TreeNodeProps<T>): JSX.Element {
   const {
@@ -124,7 +123,7 @@ export default function TreeNode<T>(props: TreeNodeProps<T>): JSX.Element {
   }
 
   function handleSelect() {
-    if (selectable) {
+    if (selectable && value != null) {
       onSelect(value);
     }
   }
@@ -173,31 +172,37 @@ export default function TreeNode<T>(props: TreeNodeProps<T>): JSX.Element {
   }
 
   return (
-    <li className={`${className || ''} ${treeNodeContainerStyle}`}>
-      {items ? (
-        <IconButton
-          icon={expanded ? 'caret-down' : 'caret-right'}
-          tabIndex={-1}
-          onClick={toggle}
-        />
-      ) : null}
-      <a
-        tabIndex={match ? 0 : -1}
-        onClick={handleSelect}
-        onKeyDown={handleKeyDown}
-        className={`${treeHeadStyle} ${cx({
-          [noSelectStyle]: !selectable,
-          [pointerStyle]: selectable,
-          [selectedStyle]:
-            !!selected && JSON.stringify(selected) === JSON.stringify(value),
-        })}`}
-      >
-        {label !== undefined
-          ? label
-          : typeof value === 'string'
-          ? value
-          : JSON.stringify(value)}
-      </a>
+    <li
+      className={
+        `${className || ''} ${treeNodeContainerStyle} ` + cx(flex, flexColumn)
+      }
+    >
+      <div className={cx(flex, flexRow)}>
+        {items ? (
+          <Button
+            icon={expanded ? 'caret-down' : 'caret-right'}
+            tabIndex={-1}
+            onClick={toggle}
+          />
+        ) : null}
+        <a
+          tabIndex={match ? 0 : -1}
+          onClick={handleSelect}
+          onKeyDown={handleKeyDown}
+          className={`${treeHeadStyle} ${cx({
+            [noSelectStyle]: !selectable,
+            [pointerStyle]: selectable,
+            [selectedStyle]:
+              !!selected && JSON.stringify(selected) === JSON.stringify(value),
+          })}`}
+        >
+          {label !== undefined
+            ? label
+            : typeof value === 'string'
+            ? value
+            : JSON.stringify(value)}
+        </a>
+      </div>
       {items ? (
         <ul
           className={cx({

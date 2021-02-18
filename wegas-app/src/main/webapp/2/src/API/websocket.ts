@@ -1,10 +1,13 @@
 // import PusherConstructor, { Pusher } from 'pusher-js';
 // import { inflate } from 'pako';
-import { store } from '../data/store';
-import { updatePusherStatus } from '../data/Reducer/globalState';
+import { store } from '../data/Stores/store';
+import { editorEvent, updatePusherStatus } from '../data/Reducer/globalState';
 import { manageResponseHandler } from '../data/actions';
 import { Actions } from '../data';
 import * as React from 'react';
+import { wlog } from '../Helper/wegaslog';
+import { IAbstractEntity } from 'wegas-ts-api';
+import { entityIs } from '../data/entities';
 
 const CHANNEL_PREFIX = {
   Admin: 'private-Admin',
@@ -87,17 +90,7 @@ async function processEvent(
   }
   return { event, data };
 }
-
-export type WebSocketEvent =
-  | 'EntityUpdatedEvent'
-  | 'EntityDestroyedEvent'
-  | 'CustomEvent'
-  | 'PageUpdate'
-  | 'LibraryUpdate-CSS'
-  | 'LibraryUpdate-ClientScript'
-  | 'LibraryUpdate-ServerScript';
-
-const webSocketEvents: WebSocketEvent[] = [
+const webSocketEvents = [
   'EntityUpdatedEvent',
   'EntityDestroyedEvent',
   'CustomEvent',
@@ -105,7 +98,16 @@ const webSocketEvents: WebSocketEvent[] = [
   'LibraryUpdate-CSS',
   'LibraryUpdate-ClientScript',
   'LibraryUpdate-ServerScript',
-];
+  'LockEvent',
+  'OutdatedEntitiesEvent',
+] as const;
+
+export type WebSocketEvent = ValueOf<typeof webSocketEvents>;
+
+interface OutadatedEntitesEvent {
+  '@class': 'OutdatedEntitiesEvent';
+  updatedEntities: { type: WegasClassNames; id: number }[];
+}
 
 interface EventMap {
   [eventId: string]: ((
@@ -113,10 +115,16 @@ interface EventMap {
   ) => void)[];
 }
 
-interface ICustomEventData {
-  deletedEntities: IAbstractEntity[];
-  updatedEntities: IAbstractEntity[];
-  events: any[];
+// interface ICustomEventData {
+//   deletedEntities: IAbstractEntity[];
+//   updatedEntities: IAbstractEntity[];
+//   events: any[];
+// }
+
+export interface LockEventData {
+  '@class': 'LockEvent';
+  token: string;
+  status: 'lock' | 'unlock';
 }
 
 /**
@@ -183,7 +191,7 @@ class WebSocketListener {
     if (this.events[eventId]) {
       this.events[eventId].push(callback);
     } else {
-      console.log('Unknown event');
+      wlog('Unknown event');
     }
   }
 
@@ -194,7 +202,7 @@ class WebSocketListener {
     if (this.events[eventId]) {
       this.events[eventId] = this.events[eventId].filter(el => el !== callback);
     } else {
-      console.log('Unknown event');
+      wlog('Unknown event');
     }
   }
 
@@ -209,20 +217,84 @@ class WebSocketListener {
     }
 
     // Dispatch inside managed events... (may be simplified)
+    // see : websocketFacade.java , EntityUpdatedEvent.java
     switch (event) {
       case 'EntityUpdatedEvent':
-      case 'EntityDestroyedEvent':
-      case 'CustomEvent':
         return store.dispatch(
-          manageResponseHandler({
-            '@class': 'ManagedResponse',
-            deletedEntities: (data as ICustomEventData).deletedEntities,
-            updatedEntities: (data as ICustomEventData).updatedEntities,
-            events: (data as ICustomEventData).events,
-          }),
+          manageResponseHandler(
+            {
+              '@class': 'ManagedResponse',
+              deletedEntities: [],
+              updatedEntities: (data as { updatedEntities: IAbstractEntity[] })
+                .updatedEntities,
+              events: [],
+            },
+            store.dispatch,
+          ),
         );
+      // {updatedEntities:{"@class":IAbstractEntity["@class"];id:number}[]}
+      case 'EntityDestroyedEvent':
+        return store.dispatch(
+          manageResponseHandler(
+            {
+              '@class': 'ManagedResponse',
+              deletedEntities: (data as {
+                deletedEntities: {
+                  '@class': IAbstractEntity['@class'];
+                  id: number;
+                }[];
+              }).deletedEntities,
+              updatedEntities: [],
+              events: [],
+            },
+            store.dispatch,
+          ),
+        );
+      case 'OutdatedEntitiesEvent': {
+        const { updatedEntities } = data as OutadatedEntitesEvent;
+
+        const toUpdate: { instances: number[]; descriptors: number[] } = {
+          instances: [],
+          descriptors: [],
+        };
+
+        for (const updatedEntity of updatedEntities) {
+          if (
+            entityIs({ '@class': updatedEntity.type }, 'VariableInstance', true)
+          ) {
+            toUpdate.instances.push(updatedEntity.id);
+          } else if (
+            entityIs(
+              { '@class': updatedEntity.type },
+              'VariableDescriptor',
+              true,
+            )
+          ) {
+            toUpdate.descriptors.push(updatedEntity.id);
+          }
+        }
+
+        if (toUpdate.instances.length > 0) {
+          store.dispatch(
+            Actions.VariableInstanceActions.getByIds(toUpdate.instances),
+          );
+        }
+
+        if (toUpdate.descriptors.length > 0) {
+          store.dispatch(
+            Actions.VariableDescriptorActions.getByIds(toUpdate.descriptors),
+          );
+        }
+
+        return;
+      }
+      case 'CustomEvent':
+        return store.dispatch(editorEvent(data as CustomEvent));
       case 'PageUpdate':
         store.dispatch(Actions.PageActions.get(data as string));
+        return;
+      case 'LockEvent':
+        store.dispatch(Actions.EditorActions.setLock(data as LockEventData));
         return;
       default:
         if (!eventFound) {

@@ -2,48 +2,53 @@ import * as React from 'react';
 import {
   pageComponentFactory,
   registerComponent,
-  PageComponentMandatoryProps,
 } from '../tools/componentFactory';
 import { schemaProps } from '../tools/schemaProps';
-import { ConnectedQuestionDisplay } from '../../AutoImport/Question/List';
-import { entityIs } from '../../../data/entities';
+import { WegasComponentProps } from '../tools/EditableComponent';
+import { ConnectedQuestionDisplay } from '../../Outputs/Question/Question';
+import { IScript, SQuestionDescriptor } from 'wegas-ts-api';
+import { createFindVariableScript } from '../../../Helper/wegasEntites';
 import { useScript } from '../../Hooks/useScript';
+import { TumbleLoader } from '../../Loader';
+import { wwarn } from '../../../Helper/wegaslog';
 
-interface QuestionDisplayProps extends PageComponentMandatoryProps {
+interface QuestionDisplayProps extends WegasComponentProps {
   /**
    * script - a script returning a QuestionDescriptor
    */
-  script?: IScript;
+  question?: IScript;
 }
 
-function QuestionDisplay({ script, EditHandle }: QuestionDisplayProps) {
-  const descriptor = useScript(
-    script ? script.content : '',
-  ) as IQuestionDescriptor;
-  return (
-    <>
-      <EditHandle />
-      {descriptor === undefined ||
-      !entityIs(descriptor, 'QuestionDescriptor') ? (
-        <pre>Undefined entity</pre>
-      ) : (
-        <ConnectedQuestionDisplay entity={descriptor} />
-      )}
-    </>
-  );
+export default function QuestionDisplay({
+  question,
+  context,
+}: QuestionDisplayProps) {
+  const descriptor = useScript<SQuestionDescriptor>(question, context);
+
+  if (descriptor == null) {
+    wwarn(`${question?.content} Not found`);
+    return <TumbleLoader />;
+  } else {
+    return <ConnectedQuestionDisplay entity={descriptor!.getEntity()} />;
+  }
 }
 
 registerComponent(
-  pageComponentFactory(
-    QuestionDisplay,
-    'Question',
-    'question',
-    {
-      question: schemaProps.scriptVariable('Question', true, [
-        'QuestionDescriptor',
-      ]),
+  pageComponentFactory({
+    component: QuestionDisplay,
+    componentType: 'Advanced',
+    name: 'Question',
+    icon: 'question',
+    schema: {
+      question: schemaProps.scriptVariable({
+        label: 'Question',
+        required: true,
+        returnType: ['SQuestionDescriptor'],
+      }),
     },
-    ['string'],
-    () => ({}),
-  ),
+    allowedVariables: ['QuestionDescriptor'],
+    getComputedPropsFromVariable: v => ({
+      question: createFindVariableScript(v),
+    }),
+  }),
 );

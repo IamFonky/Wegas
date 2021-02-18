@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /* global I18n */
@@ -93,7 +93,7 @@ YUI.add('wegas-app', function(Y) {
             var ds, dsClass, widgetCfg, totalRequests,
                 dataSources = this.get('dataSources'), // Data sources cfg objects
                 events = [], event,
-                requestCounter = 0, //                                          // Request counter 
+                requestCounter = 0, //                                          // Request counter
                 onRequest = function() { // When a response to initial requests is received
                     var playerCode, playerLanguage;
                     requestCounter -= 1;
@@ -160,7 +160,7 @@ YUI.add('wegas-app', function(Y) {
 
             // Send data sources initial requests
             Wegas.use(Y.Object.values(dataSources), Y.bind(function(Y) { // Retrieve data sources dependencies (e.g. Pusher)
-                Y.Object.each(dataSources, function(cfg, name) { // For each data source,       
+                Y.Object.each(dataSources, function(cfg, name) { // For each data source,
                     cfg.source = this.get("base") + (cfg.source || ""); // Set up datasource path
                     dsClass = Wegas[cfg.type] || Wegas.DataSource; // Determine which class to use (default is Y.Wegas.DataSource)
                     ds = new dsClass(cfg); // Instantiate the datasource
@@ -199,43 +199,80 @@ YUI.add('wegas-app', function(Y) {
                 }, this);
 
                 if (extraTabs) {
-                    if (gm.get("properties").get("val").logID) {
-                        extraTabs._addTab({
-                            label: I18n.t("global.statistics"),
-                            children: [{
-                                    type: "Statistics"
-                                }]
-                        });
-                    }
 
-                    Y.Array.each(Y.Wegas.Facade.Variable.cache.findAll("@class", "PeerReviewDescriptor"),
-                        function(prd) {
+                    Y.Wegas.Facade.Page.cache.getIndex(function(index) {
+                        var items = [index.root];
+
+                        while (items.length) {
+                            var item = items.shift();
+
+                            if (item["@class"] === "Folder") {
+                                items = items.concat(item.items);
+                            } else if (item["@class"] === "Page") {
+                                var target = [];
+                                if (item.trainerPage) {
+                                    target.push("host");
+                                }
+
+                                if (item.scenaristPage) {
+                                    target.push("edit");
+                                }
+                                if (target.length) {
+
+                                    extraTabs._addTab({
+                                        label: item.name,
+                                        targetMode: target,
+                                        children: [{
+                                                type: "PageLoader",
+                                                pageLoaderId: "extraTab_" + item.id,
+                                                defaultPageId: item.id
+                                            }]
+                                    });
+                                }
+                            }
+                        }
+
+                        if (gm.get("properties").get("val").logID) {
                             extraTabs._addTab({
-                                label: I18n.t("global.peerReview"),
+                                label: I18n.t("global.statistics"),
                                 children: [{
-                                        "type": "ReviewOrchestrator",
-                                        "variable": {
-                                            "@class": "Script",
-                                            "content": "Variable.find(gameModel, \"" + prd.get("name") + "\");\n"
-                                        }
+                                        type: "Statistics"
                                     }]
                             });
+                        }
 
-                        }, this);
+                        Y.Array.each(Y.Wegas.Facade.Variable.cache.findAll("@class", "PeerReviewDescriptor"),
+                            function(prd) {
+                                extraTabs._addTab({
+                                    label: I18n.t("global.peerReview"),
+                                    children: [{
+                                            "type": "ReviewOrchestrator",
+                                            "variable": {
+                                                "@class": "Script",
+                                                "content": "Variable.find(gameModel, \"" + prd.get("name") + "\");\n"
+                                            }
+                                        }]
+                                });
 
-                    // @TODO Until a survey import feature is available, restrict the survey tab
-                    // to admins and games already containing at least one survey:
-                    var isCurrentUserAdmin = !!Y.Wegas.Facade.User.cache.get("currentUser").get("roles").find(function(role) {
-                        return role.get("name") === "Administrator";
-                    })
-                    if (isCurrentUserAdmin || Y.Wegas.Facade.Variable.cache.find("@class", "SurveyDescriptor")) {
-                        extraTabs._addTab({
-                            label: I18n.t("global.survey"),
-                            children: [{
-                                    "type": "SurveyOrchestrator"
-                                }]
+                            }, this);
+                        // @TODO Until all survey concepts are agreed upon,
+                        // restrict the survey tab to admins or games already containing a survey:
+                        var isCurrentUserAdmin = !!Y.Wegas.Facade.User.cache.get("currentUser").get("roles").find(function(role) {
+                            return role.get("name") === "Administrator";
                         });
-                    }
+                        if (isCurrentUserAdmin || Y.Wegas.Facade.Variable.cache.find("@class", "SurveyDescriptor")) {
+                            extraTabs._addTab({
+                                label: I18n.t("global.surveys"),
+                                // This widget automatically updates the server script path
+                                targetMode: ["host"],
+                                cssClass: "survey-orchestrator-parent",
+                                children: [{
+                                        "type": "SurveyOrchestrator"
+                                    }]
+                            });
+                        }
+
+                    });
                 }
 
                 Y.one("body").on("key", function(e) { // detect ctrl+§ key
@@ -354,7 +391,7 @@ YUI.add('wegas-app', function(Y) {
         },
         // ** Private methods ** //
         /**
-         * 
+         *
          * @param {type} tId
          * @param {type} req
          * @param {type} e

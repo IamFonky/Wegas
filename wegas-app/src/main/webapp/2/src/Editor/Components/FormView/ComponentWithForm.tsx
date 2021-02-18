@@ -1,22 +1,26 @@
 import * as React from 'react';
-import { storeFactory, LocalGlobalState } from '../../../data/storeFactory';
+import {
+  storeFactory,
+  LocalGlobalState,
+} from '../../../data/Stores/storeFactory';
 import {
   AsyncVariableForm,
-  getError,
+  parseEventFromIndex,
   getConfig,
   getUpdate,
   getEntity,
 } from '../EntityEditor';
 import { css, cx } from 'emotion';
 import { Edition, closeEditor } from '../../../data/Reducer/globalState';
-import { StoreDispatch } from '../../../data/store';
+import { StoreDispatch } from '../../../data/Stores/store';
 import { createStoreConnector } from '../../../data/connectStore';
 import { flex, grow, autoScroll } from '../../../css/classes';
-import { InstancesEditorProps } from '../Variable/InstancesEditor';
+import { InstancePropertiesProps } from '../Variable/InstanceProperties';
 import { asyncSFC } from '../../../Components/HOC/asyncSFC';
 import { Toolbar } from '../../../Components/Toolbar';
 import { shallowDifferent } from '../../../Components/Hooks/storeHookFactory';
-import { Button } from '../../../Components/Inputs/Button/Button';
+import { Button } from '../../../Components/Inputs/Buttons/Button';
+import { ReflexContainer, ReflexElement, ReflexSplitter } from 'react-reflex';
 
 const growBig = css({
   flex: '30 1 auto',
@@ -34,11 +38,11 @@ interface ComponentWithFormProps {
   entityEditor?: boolean;
 }
 
-const AsyncInstancesEditor = asyncSFC<InstancesEditorProps>(
-  async (props: InstancesEditorProps) => {
+const AsyncInstancesEditor = asyncSFC<InstancePropertiesProps>(
+  async (props: InstancePropertiesProps) => {
     const InstancesEditor = await Promise.resolve<
-      typeof import('../Variable/InstancesEditor')['InstancesEditor']
-    >(import('../Variable/InstancesEditor').then(m => m.InstancesEditor));
+      typeof import('../Variable/InstanceProperties')['InstanceProperties']
+    >(import('../Variable/InstanceProperties').then(m => m.InstanceProperties));
     return <InstancesEditor {...props} />;
   },
 );
@@ -74,28 +78,31 @@ export function ComponentWithForm({
       action: () => setInstanceView(show => !show),
     });
   }
+
   return (
-    <div className={cx(flex, grow)}>
-      <div className={cx(flex, growBig, autoScroll)}>
+    <ReflexContainer className={cx(flex, grow)} orientation="vertical">
+      <ReflexElement flex={4} className={cx(flex, growBig, autoScroll)}>
         {children({
           localState: localState.editing,
           localDispatch,
         })}
-      </div>
+      </ReflexElement>
+      {localState.editing && localEntity && <ReflexSplitter />}
       {localState.editing && localEntity && (
-        <div className={cx(flex, grow, autoScroll)}>
+        <ReflexElement flex={1} className={cx(flex)}>
           <AsyncVariableForm
             {...localState.editing}
             getConfig={getConfig(localState.editing)}
             update={getUpdate(localState.editing, localDispatch)}
             actions={actions}
             entity={localEntity}
-            error={getError(localState.events, localDispatch)}
+            error={parseEventFromIndex(localState.events, localDispatch)}
           />
-        </div>
+        </ReflexElement>
       )}
+      {instanceView && entityEditor && <ReflexSplitter />}
       {instanceView && entityEditor && (
-        <div className={cx(flex, grow, autoScroll)}>
+        <ReflexElement flex={1} className={cx(flex)}>
           <Toolbar>
             <Toolbar.Header>
               <Button
@@ -110,8 +117,8 @@ export function ComponentWithForm({
               />
             </Toolbar.Content>
           </Toolbar>
-        </div>
+        </ReflexElement>
       )}
-    </div>
+    </ReflexContainer>
   );
 }

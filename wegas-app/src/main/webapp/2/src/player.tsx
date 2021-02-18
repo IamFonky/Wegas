@@ -5,37 +5,45 @@ import { FeaturesProvider } from './Components/Contexts/FeaturesProvider';
 import { LanguagesProvider } from './Components/Contexts/LanguagesProvider';
 import { ClassesProvider } from './Components/Contexts/ClassesProvider';
 import { LibrariesLoader } from './Editor/Components/LibrariesLoader';
-import { ThemeProvider } from './Components/Theme';
-import { PageLoader } from './Editor/Components/Page/PageLoader';
+import { ThemeProvider } from './Components/Style/Theme';
 import { PageAPI } from './API/pages.api';
-import { GameModel } from './data/selectors';
-import { useWebsocket } from './API/websocket';
 import 'emotion';
+import { useWebsocket } from './API/websocket';
+import { importPageComponents } from './Components/PageComponents/tools/componentFactory';
+import { PageLoader } from './Editor/Components/Page/PageLoader';
+import { pageCTX, defaultPageCTX } from './Editor/Components/Page/PageEditor';
 
-// Importing all the files containing ".component." to allow component registration without explicit import
-const componentModules = require.context(
-  './',
-  true,
-  /\.component\./,
-  'lazy-once',
-);
-componentModules.keys().map(k => componentModules(k));
+importPageComponents();
 
 function PlayerPageLoader() {
-  const [selectedPage, setSelectedPage] = React.useState<Page>();
-  if (selectedPage === undefined) {
-    PageAPI.get(GameModel.selectCurrent().id!, '1', true).then(res => {
-      setSelectedPage(Object.values(res)[0]);
+  const [selectedPageId, setSelectedPageId] = React.useState<string>();
+
+  React.useEffect(() => {
+    PageAPI.getIndex().then(index => {
+      setSelectedPageId(index.defaultPageId);
     });
-  }
+  }, []);
+
   useWebsocket('PageUpdate', () =>
-    PageAPI.get(GameModel.selectCurrent().id!, '1', true).then(res => {
-      setSelectedPage(Object.values(res)[0]);
+    PageAPI.getIndex().then(index => {
+      setSelectedPageId(index.defaultPageId);
     }),
   );
+
+  if (selectedPageId == null) {
+    return <pre>No page selected</pre>;
+  }
+
   return (
     <ThemeProvider contextName="player">
-      {selectedPage && <PageLoader selectedPage={selectedPage} />}
+      <pageCTX.Provider
+        value={{
+          ...defaultPageCTX,
+          pageIdPath: [selectedPageId],
+        }}
+      >
+        <PageLoader selectedPageId={selectedPageId} />
+      </pageCTX.Provider>
     </ThemeProvider>
   );
 }

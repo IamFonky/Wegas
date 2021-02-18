@@ -1,19 +1,19 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.rest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wegas.core.Helper;
-import com.wegas.core.ejb.GameFacade;
 import com.wegas.core.ejb.GameModelCheck;
 import com.wegas.core.ejb.GameModelFacade;
 import com.wegas.core.ejb.RequestManager;
 import com.wegas.core.ejb.VariableDescriptorFacade;
+import com.wegas.core.ejb.VariableInstanceFacade;
 import com.wegas.core.ejb.statemachine.StateMachineFacade;
 import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.exception.client.WegasNotFoundException;
@@ -23,29 +23,47 @@ import com.wegas.core.i18n.ejb.I18nFacade;
 import com.wegas.core.i18n.persistence.TranslatableContent;
 import com.wegas.core.i18n.tools.ImportTranslationsVisitor;
 import com.wegas.core.merge.utils.MergeHelper;
-import com.wegas.core.persistence.game.*;
+import com.wegas.core.persistence.game.DebugGame;
+import com.wegas.core.persistence.game.DebugTeam;
+import com.wegas.core.persistence.game.Game;
+import com.wegas.core.persistence.game.GameModel;
+import com.wegas.core.persistence.game.GameModelLanguage;
+import com.wegas.core.persistence.game.Player;
+import com.wegas.core.persistence.game.Script;
+import com.wegas.core.persistence.game.Team;
 import com.wegas.core.persistence.variable.ListDescriptor;
 import com.wegas.core.persistence.variable.ListInstance;
 import com.wegas.core.persistence.variable.VariableDescriptor;
 import com.wegas.core.persistence.variable.VariableInstance;
+import com.wegas.core.persistence.variable.primitive.BooleanInstance;
 import com.wegas.core.persistence.variable.primitive.NumberDescriptor;
+import com.wegas.core.persistence.variable.primitive.NumberInstance;
+import com.wegas.core.persistence.variable.primitive.ObjectInstance;
+import com.wegas.core.persistence.variable.primitive.StringInstance;
+import com.wegas.core.persistence.variable.primitive.TextInstance;
 import com.wegas.core.persistence.variable.scope.AbstractScope;
 import com.wegas.core.persistence.variable.scope.GameModelScope;
 import com.wegas.core.persistence.variable.statemachine.State;
 import com.wegas.core.persistence.variable.statemachine.StateMachineDescriptor;
+import com.wegas.core.persistence.variable.statemachine.StateMachineInstance;
 import com.wegas.core.persistence.variable.statemachine.Transition;
 import com.wegas.core.rest.util.JacksonMapperProvider;
 import com.wegas.core.rest.util.Views;
 import com.wegas.mcq.persistence.ChoiceDescriptor;
+import com.wegas.mcq.persistence.ChoiceInstance;
+import com.wegas.mcq.persistence.QuestionInstance;
 import com.wegas.mcq.persistence.Result;
+import com.wegas.messaging.persistence.InboxInstance;
 import com.wegas.resourceManagement.ejb.ResourceFacade;
 import com.wegas.resourceManagement.persistence.Occupation;
 import com.wegas.resourceManagement.persistence.ResourceDescriptor;
 import com.wegas.resourceManagement.persistence.ResourceInstance;
+import com.wegas.reviewing.persistence.PeerReviewInstance;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +74,7 @@ import java.util.stream.Collectors;
 import javax.ejb.Stateless;
 import javax.inject.Inject;
 import javax.persistence.EntityManager;
+import javax.persistence.Query;
 import javax.persistence.TypedQuery;
 import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.CriteriaQuery;
@@ -68,7 +87,6 @@ import javax.ws.rs.PathParam;
 import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.reflect.generics.factory.CoreReflectionFactory;
 
 /**
  * @author Francois-Xavier Aeberhard (fx at red-agent.com)
@@ -84,13 +102,13 @@ public class UpdateController {
     private VariableDescriptorFacade descriptorFacade;
 
     @Inject
+    private VariableInstanceFacade variableInstanceFacade;
+
+    @Inject
     private VariableDescriptorController descriptorController;
 
     @Inject
     private GameModelFacade gameModelFacade;
-
-    @Inject
-    private GameFacade gameFacade;
 
     @Inject
     private ResourceFacade resourceFacade;
@@ -199,7 +217,7 @@ public class UpdateController {
         script.setContent(s);
     }
 
-    private List<GameModel> findPMGs(boolean scenarioOnly) {
+    private List<GameModel> findpmgs(boolean scenarioOnly) {
         EntityManager em = this.getEntityManager();
         final CriteriaBuilder criteriaBuilder = em.getCriteriaBuilder();
         final CriteriaQuery<GameModel> query = criteriaBuilder.createQuery(GameModel.class);
@@ -288,14 +306,14 @@ public class UpdateController {
     private String updateListDescriptorScope(GameModel gameModel) {
         Collection<VariableDescriptor> variableDescriptors = gameModel.getVariableDescriptors();
         StringBuilder sb = new StringBuilder();
-        sb.append("[");
+        sb.append('[');
 
         for (VariableDescriptor vd : variableDescriptors) {
             if (vd instanceof ListDescriptor) {
                 this.updateScope(vd);
             }
         }
-        sb.append("]");
+        sb.append(']');
 
         return sb.toString();
     }
@@ -337,14 +355,14 @@ public class UpdateController {
         this.updateListDescriptorScope(gameModel);
         StringBuilder sb = new StringBuilder();
         try {
-            sb.append("[");
+            sb.append('[');
 
             ListDescriptor etapes = (ListDescriptor) descriptorFacade.find(gameModel, "etapes");
             for (VariableDescriptor item : etapes.getItems()) {
                 this.updateScope(item);
             }
 
-            sb.append("]");
+            sb.append(']');
 
         } catch (WegasNoResultException ex) {
             java.util.logging.Logger.getLogger(UpdateController.class.getName()).log(Level.SEVERE, null, ex);
@@ -367,6 +385,7 @@ public class UpdateController {
         return rtsUpdateScope(find);
     }
      */
+    @SuppressWarnings("PMD")
     private String newScope(GameModel gameModel, VariableDescriptor vd) {
         StringBuilder sb = new StringBuilder();
         try {
@@ -468,35 +487,35 @@ public class UpdateController {
     }
 
     /**
-     * Make sure all PMGshare the same structure. Make extractModel smarter
+     * Make sure all pmgshare the same structure. Make extractModel smarter
      *
      * @return some output
      */
     @GET
     @Path("LIST_PMG")
-    public String pmg_list() {
-        List<GameModel> PMGs = this.findPMGs(true);
+    public String pmgList() {
+        List<GameModel> pmgs = this.findpmgs(true);
         StringBuilder ret = new StringBuilder();
 
-        for (GameModel pmg : PMGs) {
-            ret.append(",").append(pmg.getId());
+        for (GameModel pmg : pmgs) {
+            ret.append(',').append(pmg.getId());
         }
         return ret.toString();
     }
 
     /**
-     * Make sure all PMGshare the same structure. Make extractModel smarter
+     * Make sure all pmgshare the same structure. Make extractModel smarter
      *
      * @return some output
      */
     @GET
     @Path("NORMALISE_PMG")
-    public String pmg_normalise() {
-        List<GameModel> PMGs = this.findPMGs(true);
+    public String pmgNormalise() {
+        List<GameModel> pmgs = this.findpmgs(true);
         StringBuilder ret = new StringBuilder();
 
         ret.append("<ul>");
-        for (GameModel pmg : PMGs) {
+        for (GameModel pmg : pmgs) {
             ret.append("<li>").append(pmg.getName()).append("</li>");
             ret.append(this.normalisePmg(pmg));
         }
@@ -506,19 +525,20 @@ public class UpdateController {
 
     @GET
     @Path("NORMALISE_PMG/{id: [1-9][0-9]*}")
-    public String pmg_normalise_one(@PathParam("id") Long id) {
+    public String pmgNormaliseOne(@PathParam("id") Long id) {
         GameModel pmg = gameModelFacade.find(id);
         StringBuilder ret = new StringBuilder();
 
-        ret.append("<ul>");
-        ret.append("<li>").append(pmg.getName()).append("</li>");
-        ret.append(this.normalisePmg(pmg));
-        ret.append("</ul>");
+        ret.append("<ul>")
+        .append("<li>").append(pmg.getName()).append("</li>")
+        .append(this.normalisePmg(pmg))
+        .append("</ul>");
+
         return ret.toString();
     }
 
     /**
-     * Make sure all PMGshare the same structure. Make extractModel smarter
+     * Make sure all pmgshare the same structure. Make extractModel smarter
      *
      * @return some output
      */
@@ -538,7 +558,7 @@ public class UpdateController {
 
             sb.append("<h3>GameModel: ").append(gm).append("</h3>");
             if (from != null && to == null) {
-                sb.append("Process from ").append(from.getCode()).append("/").append(from.getLang()).append(" to ").append(toCode);
+                sb.append("Process from ").append(from.getCode()).append('/').append(from.getLang()).append(" to ").append(toCode);
                 //i18nFacade.updateTranslationCode(gm, from, to);
             } else {
                 sb.append("Invalid codes");
@@ -572,7 +592,7 @@ public class UpdateController {
     }
 
     /**
-     * Make sure all PMGshare the same structure. Make extractModel smarter
+     * Make sure all pmgshare the same structure. Make extractModel smarter
      *
      * @return some output
      */
@@ -636,7 +656,7 @@ public class UpdateController {
         for (Entry<String, List<Long>> entry : map.entrySet()) {
             if (!entry.getValue().isEmpty()) {
                 sb.append("<h2>").append(entry.getKey()).append("</h2>");
-                sb.append(",").append(entry.getValue().toString());
+                sb.append(',').append(entry.getValue().toString());
             }
         }
         return sb;
@@ -644,17 +664,17 @@ public class UpdateController {
 
     @GET
     @Path("PMG_CHECK_SCRIPT")
-    public String pmg_checkScript() {
-        List<GameModel> PMGs = this.findPMGs(true);
+    public String pmgCheckScript() {
+        List<GameModel> pmgs = this.findpmgs(true);
         StringBuilder ret = new StringBuilder();
 
         ret.append("<ul>");
-        for (GameModel pmg : PMGs) {
+        for (GameModel pmg : pmgs) {
             logger.info("Check {}", pmg);
             Map<Long, WegasScriptException> results = scriptController.testGameModel(pmg.getId());
             if (!results.isEmpty()) {
                 logger.info("#Errors: {}", results.size());
-                ret.append("<li>").append(pmg.getName()).append(" (").append(pmg.getId()).append(")").append("</li>");
+                ret.append("<li>").append(pmg.getName()).append(" (").append(pmg.getId()).append(')').append("</li>");
                 ret.append("<ul>");
                 for (Entry<Long, WegasScriptException> result : results.entrySet()) {
                     Long key = result.getKey();
@@ -713,7 +733,7 @@ public class UpdateController {
                 ListDescriptor newChild = new ListDescriptor(childrenPrefix + i);
                 newChild.setDefaultInstance(new ListInstance());
                 newChild.setScope(new GameModelScope());
-                descriptorFacade.createChild(gameModel, parent, newChild, false);
+                descriptorFacade.createChild(gameModel, parent, newChild, false, false);
                 if (i < parent.size()) {
                     // move new folder at the right place
                     descriptorFacade.move(newChild.getId(), parent.getId(), i - 1);
@@ -754,18 +774,19 @@ public class UpdateController {
         try {
             VariableDescriptor project = descriptorFacade.find(pmg, "projet");
             project.setName("project");
-        } catch (WegasNoResultException ex) {
+        } catch (WegasNoResultException ex) {// NOPMD
+            // expected behaviour
         }
 
-        sb.append(this.processChildren(pmg, "questions", "questionsPhase", 4));
-        sb.append(this.processChildren(pmg, "questionsPhase1", "questionsPeriod1_", 1));
-        sb.append(this.processChildren(pmg, "questionsPhase2", "questionsPeriod2_", 1));
-        sb.append(this.processChildren(pmg, "questionsPhase3", "questionsPeriod3_", 1));
-        sb.append(this.processChildren(pmg, "questionsPhase4", "questionsPeriod4_", 1));
+        sb.append(this.processChildren(pmg, "questions", "questionsPhase", 4))
+        .append(this.processChildren(pmg, "questionsPhase1", "questionsPeriod1_", 1))
+        .append(this.processChildren(pmg, "questionsPhase2", "questionsPeriod2_", 1))
+        .append(this.processChildren(pmg, "questionsPhase3", "questionsPeriod3_", 1))
+        .append(this.processChildren(pmg, "questionsPhase4", "questionsPeriod4_", 1))
 
-        sb.append(this.processChildren(pmg, "actions", "actionsPhase", 4));
+        .append(this.processChildren(pmg, "actions", "actionsPhase", 4))
 
-        sb.append("</ul>");
+        .append("</ul>");
 
         return sb.toString();
     }
@@ -775,29 +796,29 @@ public class UpdateController {
      */
     @GET
     @Path("PMG_UPGRADE")
-    public String pmg_upgrade() {
-        List<GameModel> PMGs = this.findPMGs(false);
+    public String pmgUpgrade() {
+        List<GameModel> pmgs = this.findpmgs(false);
         StringBuilder ret = new StringBuilder();
 
         ret.append("<ul>");
-        for (GameModel pmg : PMGs) {
+        for (GameModel pmg : pmgs) {
             ret.append(this.updateHistorySize(pmg));
         }
         ret.append("</ul>");
         return ret.toString();
     }
 
-    public String pmg_upgrade_BURNDOWN() {
-        List<GameModel> PMGs = this.findPMGs(false);
+    public String pmgUpgradeBurndown() {
+        List<GameModel> pmgs = this.findpmgs(false);
         StringBuilder ret = new StringBuilder();
         String status;
 
         ret.append("<ul>");
 
-        for (GameModel pmg : PMGs) {
+        for (GameModel pmg : pmgs) {
             ret.append("<li>");
             ret.append(pmg.getName());
-            ret.append("/");
+            ret.append('/');
             ret.append(pmg.getId());
             status = addVariable(pmg, "{\"@class\":\"BooleanDescriptor\",\"comments\":\"\",\"defaultInstance\":{\"@class\":\"BooleanInstance\",\"value\":false},\"label\":\"burndownEnabled\",\"scope\":{\"@class\":\"GameModelScope\",\"broadcastScope\":\"TeamScope\"},\"title\":null,\"name\":\"burndownEnabled\"}", "burndownEnabled", "properties");
             ret.append(" burndownEnabled: ");
@@ -807,7 +828,7 @@ public class UpdateController {
 
             ret.append("<li>");
             ret.append(pmg.getName());
-            ret.append("/");
+            ret.append('/');
             ret.append(pmg.getId());
             status = addVariable(pmg, "{\"@class\":\"BurndownDescriptor\",\"comments\":\"\",\"defaultInstance\":{\"@class\":\"BurndownInstance\",\"iterations\":[]},\"label\":\"burndown\",\"scope\":{\"@class\":\"TeamScope\",\"broadcastScope\":\"TeamScope\"},\"title\":\"\",\"name\":\"burndown\",\"description\":\"\"}", "burndown", "pageUtilities");
             ret.append(" burndown: ");
@@ -838,7 +859,8 @@ public class UpdateController {
             logger.error("    DESC: {}", descName);
             em.remove(vi);
 
-            if (++counter == 3000) {
+            counter++;
+            if (counter == 3000) {
                 break;
             }
         }
@@ -859,7 +881,8 @@ public class UpdateController {
             gameModelFacade.propagateAndReviveDefaultInstances(g.getGameModel(), dt, true); // restart missing debugTeam
             stateMachineFacade.runStateMachines(dt);
             this.getEntityManager().flush();
-            if (++counter == 25) {
+            counter++;
+            if (counter == 25) {
                 break;
             }
         }
@@ -885,7 +908,8 @@ public class UpdateController {
     @Path("CleanOccupations")
     public String cleanOccupations() {
         String sqlRD = "SELECT rd FROM ResourceDescriptor rd";
-        TypedQuery<ResourceDescriptor> allRd = this.getEntityManager().createQuery(sqlRD, ResourceDescriptor.class);
+        TypedQuery<ResourceDescriptor> allRd = this.getEntityManager().createQuery(sqlRD, ResourceDescriptor.class
+        );
         StringBuilder output = new StringBuilder();
 
         for (ResourceDescriptor rd : allRd.getResultList()) {
@@ -933,9 +957,11 @@ public class UpdateController {
     private List<Game> findNoDebugTeamGames() {
         EntityManager em = this.getEntityManager();
         final CriteriaBuilder criteriaBuilder = em.getCriteriaBuilder();
-        final CriteriaQuery<Game> query = criteriaBuilder.createQuery(Game.class);
+        final CriteriaQuery<Game> query = criteriaBuilder.createQuery(Game.class
+        );
 
-        Root<Game> e = query.from(Game.class);
+        Root<Game> e = query.from(Game.class
+        );
         query.select(e);
 
         List<Game> games = em.createQuery(query).getResultList();
@@ -961,13 +987,15 @@ public class UpdateController {
 
     private Long countOrphans() {
         String sql = "SELECT count(variableinstance) FROM VariableInstance variableinstance WHERE  (variableinstance.playerScopeKey IS NOT NULL AND  variableinstance.playerScopeKey NOT IN (SELECT player.id FROM Player player)) OR (variableinstance.teamScopeKey IS NOT NULL AND variableinstance.teamScopeKey NOT IN (SELECT team.id FROM Team team)) OR (variableinstance.gameScopeKey IS NOT NULL AND variableinstance.gameScopeKey NOT IN (SELECT game.id from Game game))";
-        TypedQuery<Long> query = this.getEntityManager().createQuery(sql, Long.class);
+        TypedQuery<Long> query = this.getEntityManager().createQuery(sql, Long.class
+        );
         return query.getSingleResult();
     }
 
     private List<VariableInstance> findOrphans() {
         String sql = "SELECT variableinstance FROM VariableInstance variableinstance WHERE  (variableinstance.playerScopeKey IS NOT NULL AND  variableinstance.playerScopeKey NOT IN (SELECT player.id FROM Player player)) OR (variableinstance.teamScopeKey IS NOT NULL AND variableinstance.teamScopeKey NOT IN (SELECT team.id FROM Team team)) OR (variableinstance.gameScopeKey IS NOT NULL AND variableinstance.gameScopeKey NOT IN (SELECT game.id from Game game))";
-        TypedQuery<VariableInstance> query = this.getEntityManager().createQuery(sql, VariableInstance.class).setMaxResults(3000);
+        TypedQuery<VariableInstance> query = this.getEntityManager().createQuery(sql, VariableInstance.class
+        ).setMaxResults(3000);
         return query.getResultList();
     }
 
@@ -994,7 +1022,7 @@ public class UpdateController {
             logger.error("CHECK {}", gm);
             Exception validate = gameModelCheck.validate(gm);
             sb.append("<li>");
-            sb.append(gm.getName()).append(";").append(gm.getId()).append(";");
+            sb.append(gm.getName()).append(';').append(gm.getId()).append(';');
             if (validate != null) {
                 logger.error(" FAILURE");
                 sb.append(validate);
@@ -1032,7 +1060,7 @@ public class UpdateController {
             logger.error("CHECK {}", gm);
             Exception validate = gameModelCheck.validate(gm);
             sb.append("<li>");
-            sb.append(gm.getName()).append(";").append(gm.getId()).append(";");
+            sb.append(gm.getName()).append(';').append(gm.getId()).append(';');
             if (validate != null) {
                 logger.error(" FAILURE");
                 sb.append(validate);
@@ -1062,8 +1090,7 @@ public class UpdateController {
                 GameModelLanguage sourceLang = source.getLanguageByCode(codeToCopy);
                 if (sourceLang != null) {
                     MergeHelper.visitMergeable(target, Boolean.TRUE,
-                        new ImportTranslationsVisitor(codeRef, codeToCopy,
-                            i18nFacade), source);
+                        new ImportTranslationsVisitor(codeRef, codeToCopy), source);
                     return "Done";
                 } else {
                     return "Source does not contains the lang to copy !";
@@ -1073,6 +1100,161 @@ public class UpdateController {
             }
         } else {
             return "Gamemodels not found";
+        }
+    }
+
+    private void appendInTag(StringBuilder sb, String tag, Object... args) {
+        sb.append('<').append(tag).append('>');
+        for (Object arg : args) {
+            sb.append(arg);
+        }
+        sb.append("</").append(tag).append('>');
+    }
+
+    @GET
+    @Path("DestroyInstance/{instanceId : ([1-9][0-9]*)}")
+    public String destroyInstance(@PathParam("instanceId") Long id) {
+        VariableInstance instance = variableInstanceFacade.find(id);
+        this.getEntityManager().remove(instance);
+        return "OK";
+    }
+
+    private Map<GameModel, Map<VariableDescriptor, List<VariableInstance>>> findDuplicates() {
+        String sql = "select array_agg(id) from variableinstance "
+            + "where coalesce(player_id, team_id, gamemodel_id) IS NOT null "
+            + "group by player_id, playerscope_id, team_id, teamscope_id, gamemodel_id, gamemodelscope_id  "
+            + "having count (*) > 1";
+
+        EntityManager em = this.getEntityManager();
+        Query query = em.createNativeQuery(sql);
+
+        Map<GameModel, Map<VariableDescriptor, List<VariableInstance>>> map = new HashMap<>();
+
+        List resultList = query.getResultList();
+        for (Object result : resultList) {
+            Long[] list = (Long[]) result;
+            for (Long viId : list) {
+                VariableInstance vi = variableInstanceFacade.find(viId);
+                VariableDescriptor descriptor = vi.getDescriptor();
+                GameModel gameModel = descriptor.getGameModel();
+                map.putIfAbsent(gameModel, new HashMap<>());
+
+                Map<VariableDescriptor, List<VariableInstance>> vdMap = map.get(gameModel);
+                vdMap.putIfAbsent(descriptor, new ArrayList<>());
+                List<VariableInstance> instanceList = vdMap.get(descriptor);
+                instanceList.add(vi);
+            }
+        }
+        return map;
+    }
+
+    @GET
+    @Path("AutoFixDuplicates")
+    public String fixDuplicates() {
+        Map<GameModel, Map<VariableDescriptor, List<VariableInstance>>> map = findDuplicates();
+        EntityManager em = getEntityManager();
+
+        for (Map<VariableDescriptor, List<VariableInstance>> descs : map.values()) {
+            for (Entry<VariableDescriptor, List<VariableInstance>> vdEntry : descs.entrySet()) {
+                VariableDescriptor vd = vdEntry.getKey();
+
+                Object defaultValue = getValue(vd.getDefaultInstance());
+
+                List<VariableInstance> instances = vdEntry.getValue();
+                if (instances.size() > 1) {
+                    if (vd instanceof ListDescriptor) {
+                        VariableInstance instance = instances.get(0);
+                        em.remove(instance);
+                    } else {
+                        for (VariableInstance instance : instances) {
+                            Object value = getValue(instance);
+                            if (defaultValue != null && defaultValue.equals(value)) {
+                                // remove the first instance which match the default instance
+                                em.remove(instance);
+                                // Only ONE!
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return "OK";
+    }
+
+    @GET
+    @Path("ListDuplicates")
+    public String listDuplicates() {
+        Map<GameModel, Map<VariableDescriptor, List<VariableInstance>>> map = findDuplicates();
+
+        StringBuilder sb = new StringBuilder();
+
+        for (Entry<GameModel, Map<VariableDescriptor, List<VariableInstance>>> gmEntry : map.entrySet()) {
+            GameModel gm = gmEntry.getKey();
+            Map<VariableDescriptor, List<VariableInstance>> descs = gmEntry.getValue();
+            appendInTag(sb, "H3", "GameModel ", gm.getName(), " (", gm.getId(), ")");
+
+            for (Entry<VariableDescriptor, List<VariableInstance>> vdEntry : descs.entrySet()) {
+                VariableDescriptor vd = vdEntry.getKey();
+                List<VariableInstance> instances = vdEntry.getValue();
+                appendInTag(sb, "h4", "Variable ",
+                    vd.getLabel().translateOrEmpty(gm),
+                    " (", vd.getId(), ",", vd.getJSONClassName(), ")");
+                appendValue(sb, "default value", vd.getDefaultInstance());
+                for (VariableInstance vi : instances) {
+                    appendInTag(sb, "div", vi.getId(), ", ", vi.getOwner());
+                    appendInTag(sb, "div", "<a target='_blank' href=\"DestroyInstance/", vi.getId(),
+                        "\">Destroy it !</a>");
+                    appendValue(sb, "value", vi);
+                }
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private Object getValue(VariableInstance vi) {
+        Object value = null;
+        if (vi instanceof TextInstance) {
+            Player p = vi.getEffectiveOwner().getAnyLivePlayer();
+            value = ((TextInstance) vi).getTrValue().translateOrEmpty(p);
+        } else if (vi instanceof StringInstance) {
+            Player p = vi.getEffectiveOwner().getAnyLivePlayer();
+            value = ((StringInstance) vi).getTrValue().translateOrEmpty(p);
+        } else if (vi instanceof NumberInstance) {
+            value = ((NumberInstance) vi).getValue();
+        } else if (vi instanceof BooleanInstance) {
+            value = ((BooleanInstance) vi).getValue();
+        } else if (vi instanceof InboxInstance) {
+            value = ((InboxInstance) vi).getMessages().size();
+        } else if (vi instanceof QuestionInstance) {
+            QuestionInstance qi = (QuestionInstance) vi;
+            value = qi.getActive() + ";" + qi.isValidated();
+        } else if (vi instanceof ChoiceInstance) {
+            value = ((ChoiceInstance) vi).getReplies().size();
+        } else if (vi instanceof StateMachineInstance) {
+            value = ((StateMachineInstance) vi).getTransitionHistory();
+        } else if (vi instanceof PeerReviewInstance) {
+            value = ((PeerReviewInstance) vi).getReviewState();
+        } else if (vi instanceof ObjectInstance) {
+            ObjectInstance oi = (ObjectInstance) vi;
+            Map<String, String> properties = oi.getProperties();
+            List<String> keys = new ArrayList<>(properties.keySet());
+            Collections.sort(keys);
+            value = "";
+            for (String key : keys) {
+                value += key + "=" + properties.get(key) + ";<br/>";
+            }
+        }
+
+        return value;
+    }
+
+    private void appendValue(StringBuilder sb, String label, VariableInstance vi) {
+        Object value = this.getValue(vi);
+        if (value != null) {
+            appendInTag(sb, "div", label, ": ", value);
         }
     }
 }

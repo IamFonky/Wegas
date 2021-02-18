@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2019 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.security.aai;
@@ -11,8 +11,9 @@ import ch.albasim.wegas.annotations.View;
 import ch.albasim.wegas.annotations.WegasEntityProperty;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.wegas.core.security.persistence.AbstractAccount;
-import com.wegas.core.security.persistence.AccountDetails;
-import com.wegas.editor.View.StringView;
+import com.wegas.core.security.util.AaiAuthentication;
+import com.wegas.core.security.util.AuthenticationMethod;
+import com.wegas.editor.view.StringView;
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Inheritance;
@@ -95,5 +96,10 @@ public class AaiAccount extends AbstractAccount {
 
     public void setVerified(Boolean verified) {
         // nothing to do, but define such a sette make Jackson happy
+    }
+
+    @Override
+    public AuthenticationMethod getAuthenticationMethod() {
+        return new AaiAuthentication();
     }
 }

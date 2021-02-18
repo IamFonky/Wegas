@@ -3,19 +3,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
+        <groupId>ch.albasim.wegas</groupId>
         <artifactId>wegas-project</artifactId>
-        <groupId>com.wegas</groupId>
-        <version>4.0-SNAPSHOT</version>
+        <version>4.1-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.wegas</groupId>
+    <groupId>ch.albasim.wegas</groupId>
     <artifactId>wegas-core</artifactId>
     <packaging>jar</packaging>
     <name>wegas-core</name>
 
     <dependencies>
         <dependency>
-            <groupId>com.wegas</groupId>
+            <groupId>ch.albasim.wegas</groupId>
             <artifactId>wegas-annotations</artifactId>
             <version>${project.version}</version>
             <type>jar</type>
@@ -52,6 +52,12 @@
             <groupId>org.apache.shiro</groupId>
             <artifactId>shiro-web</artifactId>
         </dependency>
+
+        <!-- Does not work with our runAs
+        <dependency>
+            <groupId>org.apache.shiro</groupId>
+            <artifactId>shiro-hazelcast</artifactId>
+        </dependency>-->
 
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
@@ -169,6 +175,13 @@
             </exclusions>
         </dependency>
 
+        <!-- required by arq-suite-ext -->
+        <dependency>
+            <groupId>commons-lang</groupId>
+            <artifactId>commons-lang</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -217,8 +230,8 @@
         <dependency>
             <groupId>org.eclipse.microprofile.metrics</groupId>
             <artifactId>microprofile-metrics-api</artifactId>
-            <version>2.0.1</version>
             <type>jar</type>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -278,8 +291,9 @@
             <artifactId>jersey-media-json-jackson</artifactId>
         </dependency>
         <dependency>
-            <groupId>javax</groupId>
-            <artifactId>javaee-api</artifactId>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <version>8.0.0</version>
         </dependency>
     </dependencies>
     <build>
@@ -354,7 +368,7 @@
                         </goals>
                         <configuration>
                             <overwrite>true</overwrite>
-                            <outputDirectory>${project.build.outputDirectory}</outputDirectory> 
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
                             <resources>
                                 <resource>
                                     <directory>target/generated-sources/annotations</directory>
@@ -381,8 +395,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>${jdk.version}</source>
+                    <target>${jdk.version}</target>
                     <!-- Using nashorn internal -->
                     <parameters>true</parameters>
                     <compilerArgument>-XDignore.symbol.file</compilerArgument>

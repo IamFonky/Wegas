@@ -4,6 +4,7 @@ import {
   MethodConfig,
   WegasMethod,
   getVariableMethodConfig,
+  WegasMethodReturnType,
 } from '../../../../editionConfig';
 
 import { schemaProps } from '../../../../../Components/PageComponents/tools/schemaProps';
@@ -12,13 +13,17 @@ import { pick } from 'lodash-es';
 
 import { ScriptMode, isScriptCondition } from '../Script';
 
-import { Item } from '../../../Tree/TreeSelect';
+import {
+  StringOrT,
+  genVarItems,
+  TreeSelectItem,
+} from '../../TreeVariableSelect';
 
-import { StringOrT, genVarItems } from '../../TreeVariableSelect';
-
-import { store } from '../../../../../data/store';
+import { store } from '../../../../../data/Stores/store';
 import { TYPESTRING } from 'jsoninput/typings/types';
 import { safeClientScriptEval } from '../../../../../Components/Hooks/useScript';
+import { isServerMethod } from '../../../../../data/Reducer/globalState';
+import { SVariableDescriptor } from 'wegas-ts-api';
 
 const booleanOperators = {
   '===': { label: 'equals' },
@@ -225,28 +230,58 @@ export const typeCleaner = (
   }
 };
 
+interface FullNameMethod extends ServerGlobalMethod {
+  fullName: string;
+}
+
+function getServerMethods(
+  serverObject: ServerGlobalObject | ServerGlobalMethod | undefined,
+  path: string[] = [],
+  methods: FullNameMethod[] = [],
+): FullNameMethod[] {
+  if (serverObject == null) {
+    return methods;
+  } else if (isServerMethod(serverObject)) {
+    return [...methods, { ...serverObject, fullName: path.join('.') }];
+  } else {
+    return [
+      ...methods,
+      ...Object.entries(serverObject).reduce((old, [objectName, value]) => {
+        return [...old, ...getServerMethods(value, [...path, objectName])];
+      }, []),
+    ];
+  }
+}
+
 export function genGlobalItems<T = string>(
   mode?: ScriptMode,
   decorateFn?: (value: string) => T,
-): Item<StringOrT<typeof decorateFn, T>>[] {
-  return Object.entries(store.getState().global.serverMethods)
-    .filter(
-      ([_k, v]) =>
-        v !== undefined &&
-        (isScriptCondition(mode)
-          ? v.returns !== undefined
-          : v.returns === undefined),
+): TreeSelectItem<StringOrT<typeof decorateFn, T>>[] {
+  return getServerMethods(store.getState().global.serverMethods)
+    .filter(method =>
+      isScriptCondition(mode)
+        ? method.returns !== undefined
+        : method.returns === undefined,
     )
-    .map(([k, v]) => ({
-      label: v!.label,
-      value: decorateFn ? decorateFn(k) : k,
+    .map(method => ({
+      label: method.label,
+      value: decorateFn ? decorateFn(method.fullName) : method.fullName,
     }));
 }
 
-export function getGlobalMethodConfig(globalMethod: string) {
-  return {
-    [globalMethod]: store.getState().global.serverMethods[globalMethod],
-  } as MethodConfig;
+export function getGlobalMethodConfig(globalMethod: string): MethodConfig {
+  const foundMethod = getServerMethods(
+    store.getState().global.serverMethods,
+  ).find(method => method.fullName === globalMethod);
+  return foundMethod
+    ? {
+        [globalMethod]: {
+          label: foundMethod.label,
+          parameters: foundMethod.parameters as WegasMethodParameter[],
+          returns: foundMethod.returns as WegasMethodReturnType,
+        },
+      }
+    : {};
 }
 
 interface MethodSearcher {
@@ -258,7 +293,7 @@ interface GlobalMethodSearcher extends MethodSearcher {
 }
 interface VariableMethodSearcher extends MethodSearcher {
   type: 'variable';
-  value?: IVariableDescriptor;
+  value?: SVariableDescriptor;
   mode?: ScriptMode;
 }
 interface BooleanMethodSearcher extends MethodSearcher {
@@ -300,10 +335,9 @@ export const makeSchemaInitExpression = (
   mode?: ScriptMode,
   scriptableClassFilter?: WegasScriptEditorReturnTypeName[],
 ) => ({
-  variableName: schemaProps.hidden(false, 'string', 1000),
-  initExpression: schemaProps.tree(
-    undefined,
-    [
+  variableName: schemaProps.hidden({ type: 'string', index: 1000 }),
+  initExpression: schemaProps.tree({
+    items: [
       {
         label: 'Variables',
         items: genVarItems(
@@ -335,30 +369,24 @@ export const makeSchemaInitExpression = (
           ]
         : []),
     ],
-    false,
-    undefined,
-    'object',
-    'DEFAULT',
-    0,
-    'inline',
-  ),
+    type: 'object',
+    layout: 'inline',
+    borderBottom: true,
+  }),
 });
 
 export const makeSchemaMethodSelector = (methods?: MethodConfig) => ({
   ...(methods && Object.keys(methods).length > 0
     ? {
-        methodName: schemaProps.select(
-          undefined,
-          false,
-          Object.keys(methods).map(k => ({
+        methodName: schemaProps.select({
+          values: Object.keys(methods).map(k => ({
             label: methods[k].label,
             value: k,
           })),
-          'string',
-          'DEFAULT',
-          1,
-          'inline',
-        ),
+          returnType: 'string',
+          index: 1,
+          layout: 'inline',
+        }),
       }
     : {}),
 });
@@ -393,24 +421,19 @@ export const makeSchemaConditionAttributes = (
 ) => ({
   ...(method && isScriptCondition(mode) && method.returns !== 'boolean'
     ? {
-        operator: schemaProps.select(
-          undefined,
-          false,
-          filterOperators(method.returns),
-          'string',
-          'DEFAULT',
-          method.parameters.length + index,
-          'inline',
-        ),
-        comparator: schemaProps.custom(
-          undefined,
-          false,
-          method.returns,
-          method.returns,
-          undefined,
-          method.parameters.length + index,
-          'inline',
-        ),
+        operator: schemaProps.select({
+          values: filterOperators(method.returns),
+          returnType: 'string',
+          index: method.parameters.length + index,
+          layout: 'inline',
+        }),
+        comparator: schemaProps.custom({
+          label: undefined,
+          type: method.returns,
+          viewType: method.returns,
+          index: method.parameters.length + index,
+          layout: 'inline',
+        }),
       }
     : {}),
 });
@@ -431,22 +454,6 @@ export const makeGlobalMethodSchema = (
   },
 });
 
-export const makeVariableMethodSchema = (
-  variableIds: number[],
-  methods?: MethodConfig,
-  scriptMethod?: WegasMethod,
-  mode?: ScriptMode,
-  scriptableClassFilter?: WegasScriptEditorReturnTypeName[],
-): WyiswygExpressionSchema => ({
-  description: 'VariableMethodSchema',
-  properties: {
-    ...makeSchemaInitExpression(variableIds, mode, scriptableClassFilter),
-    ...makeSchemaMethodSelector(methods),
-    ...(scriptMethod ? makeSchemaParameters(2, scriptMethod.parameters) : {}),
-    ...makeSchemaConditionAttributes(2, scriptMethod, mode),
-  },
-});
-
 export const generateSchema = async (
   attributes: PartialAttributes,
   variableIds: number[],
@@ -462,7 +469,7 @@ export const generateSchema = async (
   if (attributes.initExpression) {
     const type = attributes.initExpression.type;
     const script = attributes.initExpression.script;
-    const variable = safeClientScriptEval<IVariableDescriptor>(script);
+    const variable = safeClientScriptEval<SVariableDescriptor>(script);
     let configArg: MethodSearchers;
     switch (type) {
       case 'global':

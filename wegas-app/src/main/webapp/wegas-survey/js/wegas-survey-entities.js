@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2019  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /* global I18n */
@@ -17,7 +17,7 @@ YUI.add('wegas-survey-entities', function(Y) {
         SELF = "self", BOOLEAN = "boolean", BUTTON = "Button", OBJECT = "object",
         HTML = "html", SCRIPT = "script", NUMBER = "number",
         NULLSTRING = ["null", STRING],
-        STATUS_NOT_STARTED  ="NOT_STARTED",
+        STATUS_NOT_STARTED = "NOT_STARTED",
         Wegas = Y.Wegas, persistence = Wegas.persistence,
         VERSION_ATTR_DEF,
         SELFARG,
@@ -61,6 +61,14 @@ YUI.add('wegas-survey-entities', function(Y) {
                 type: HTML,
                 label: "Closing remarks"
             }),
+            isPublished: {
+                type: BOOLEAN,
+                value: true,
+                view: {
+                    className: 'wegas-advanced-feature',
+                    label: 'is published'
+                }
+            },
             items: {
                 type: ARRAY,
                 value: [],
@@ -69,10 +77,17 @@ YUI.add('wegas-survey-entities', function(Y) {
                     value: {
                         "@class": "SurveySectionDescriptor"
                     },
-                    index: 1,
+                    index: 1
                 },
                 view: {
                     label: 'Sections',
+                    type: HIDDEN
+                }
+            },
+            hasTokens: {
+                type: BOOLEAN,
+                value: false,
+                view: {
                     type: HIDDEN
                 }
             },
@@ -122,14 +137,14 @@ YUI.add('wegas-survey-entities', function(Y) {
                             fn: "WidgetMenu",
                             cfg: {
                                 children: [{
-                                    type: BUTTON,
-                                    label: "<span class='fa fa-map'></span> Section",
-                                    plugins: [{
-                                            fn: "AddEntityChildAction",
-                                            cfg: {
-                                                targetClass: "SurveySectionDescriptor"
-                                            }
-                                        }]
+                                        type: BUTTON,
+                                        label: "<span class='fa fa-map'></span> Section",
+                                        plugins: [{
+                                                fn: "AddEntityChildAction",
+                                                cfg: {
+                                                    targetClass: "SurveySectionDescriptor"
+                                                }
+                                            }]
 
                                     }
                                 ]
@@ -222,7 +237,7 @@ YUI.add('wegas-survey-entities', function(Y) {
             }
         }
     });
-    
+
     /**
      * SurveySectionDescriptor
      */
@@ -261,13 +276,6 @@ YUI.add('wegas-survey-entities', function(Y) {
                 },
                 view: {
                     label: 'Inputs',
-                    type: HIDDEN
-                }
-            },
-            index: {
-                type: NUMBER,
-                view: {
-                    label: "Index of this section",
                     type: HIDDEN
                 }
             },
@@ -313,38 +321,61 @@ YUI.add('wegas-survey-entities', function(Y) {
                             fn: "WidgetMenu",
                             cfg: {
                                 children: [{
-                                    type: BUTTON,
-                                    label: "<span class='fa fa-paragraph'></span> Text input",
-                                    plugins: [{
-                                            fn: "AddEntityChildAction",
-                                            cfg: {
-                                                targetClass: "SurveyTextDescriptor"
-                                            }
-                                        }]
-                                    },{
-                                    type: BUTTON,
-                                    label: "<span class='fa wegas-icon-numberdescriptor'></span> Number input",
-                                    plugins: [{
-                                            fn: "AddEntityChildAction",
-                                            cfg: {
-                                                targetClass: "SurveyNumberDescriptor"
-                                            }
-                                        }]
-                                    },{
-                                    type: BUTTON,
-                                    label: "<span class='fa fa-list-ul'></span> Choice selection",
-                                    plugins: [{
-                                            fn: "AddEntityChildAction",
-                                            cfg: {
-                                                targetClass: "SurveyChoicesDescriptor"
-                                            }
-                                        }]
+                                        type: BUTTON,
+                                        label: "<span class='fa fa-paragraph'></span> Text input",
+                                        plugins: [{
+                                                fn: "AddEntityChildAction",
+                                                cfg: {
+                                                    targetClass: "SurveyTextDescriptor"
+                                                }
+                                            }]
+                                    }, {
+                                        type: BUTTON,
+                                        label: "<span class='fa wegas-icon-numberdescriptor'></span> Number input",
+                                        plugins: [{
+                                                fn: "AddEntityChildAction",
+                                                cfg: {
+                                                    targetClass: "SurveyNumberDescriptor"
+                                                }
+                                            }]
+                                    }, {
+                                        type: BUTTON,
+                                        label: "<span class='fa fa-list-ul'></span> Choice selection",
+                                        plugins: [{
+                                                fn: "AddEntityChildAction",
+                                                cfg: {
+                                                    targetClass: "SurveyChoicesDescriptor"
+                                                }
+                                            }]
                                     }
                                 ]
                             }
                         }
                     ]
                 }
+            }
+        },
+
+        /**
+         * Defines methods available in wysiwyg script editor
+         */
+        METHODS: {
+            activate: {
+                arguments: [SELFARG]
+            },
+            deactivate: {
+                label: "deactivate",
+                arguments: [SELFARG]
+            },
+            isActive: {
+                label: "is active",
+                returns: BOOLEAN,
+                arguments: [SELFARG]
+            },
+            isNotActive: {
+                label: "is active",
+                returns: BOOLEAN,
+                arguments: [SELFARG]
             }
         }
     });
@@ -364,9 +395,9 @@ YUI.add('wegas-survey-entities', function(Y) {
             }
         }
     });
-    
 
-    
+
+
     /**
      * SurveyInputDescriptor
      */
@@ -375,13 +406,6 @@ YUI.add('wegas-survey-entities', function(Y) {
         ATTRS: {
             "@class": {
                 value: "SurveyInputDescriptor"
-            },
-            index: {
-                type: NUMBER,
-                view: {
-                    label: "Index",
-                    type: HIDDEN
-                }
             },
             description: Y.Wegas.Helper.getTranslationAttr({
                 label: "Description",
@@ -395,12 +419,34 @@ YUI.add('wegas-survey-entities', function(Y) {
                     label: 'Reply is compulsory'
                 }
             }
+        },
+        /**
+         * Methods available in wysiwyg script editor
+         */
+        METHODS: {
+            activate: {
+                arguments: [SELFARG]
+            },
+            deactivate: {
+                label: "deactivate",
+                arguments: [SELFARG]
+            },
+            isActive: {
+                label: "is active",
+                returns: BOOLEAN,
+                arguments: [SELFARG]
+            },
+            isNotActive: {
+                label: "is active",
+                returns: BOOLEAN,
+                arguments: [SELFARG]
+            }
         }
     });
-    
-    
-    
-   
+
+
+
+
     /**
      * SurveyTextDescriptor
      */
@@ -450,7 +496,7 @@ YUI.add('wegas-survey-entities', function(Y) {
             }
         }
     });
-    
+
     /**
      * SurveyNumberDescriptor
      */
@@ -564,8 +610,8 @@ YUI.add('wegas-survey-entities', function(Y) {
             }
         }
     });
-    
-    
+
+
     /**
      * SurveyChoicesDescriptor
      */
@@ -623,7 +669,7 @@ YUI.add('wegas-survey-entities', function(Y) {
                         label: Y.Wegas.Helper.getTranslationAttr({
                             label: "Label",
                             index: -1,
-                            description: "Displayed to players. To show images stored in the \"Files\" area, follow this scheme: <img data-file=\"filename.png\">",
+                            description: "Displayed to players. To show images stored in the \"Files\" area, follow this scheme: <img data-file=\"/filename.png\">",
                             type: STRING
                         })
                     }
@@ -716,8 +762,8 @@ YUI.add('wegas-survey-entities', function(Y) {
             }
         }
     });
-    
-    
+
+
     /**
      * SurveyInputInstance
      */
@@ -739,6 +785,6 @@ YUI.add('wegas-survey-entities', function(Y) {
             }
         }
     });
-    
+
 });
 

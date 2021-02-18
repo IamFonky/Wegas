@@ -1,18 +1,18 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.rest;
 
-import com.wegas.core.tools.FindAndReplacePayload;
 import com.wegas.core.ejb.GameModelFacade;
 import com.wegas.core.ejb.ModelFacade;
 import com.wegas.core.ejb.PlayerFacade;
 import com.wegas.core.ejb.RequestManager;
 import com.wegas.core.ejb.cron.EjbTimerFacade;
+import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.exception.client.WegasIncompatibleType;
 import com.wegas.core.merge.patch.WegasEntityPatch;
 import com.wegas.core.merge.patch.WegasPatch.PatchDiff;
@@ -21,6 +21,7 @@ import com.wegas.core.persistence.game.GameModel;
 import com.wegas.core.persistence.game.GameModel.Status;
 import com.wegas.core.persistence.game.Player;
 import com.wegas.core.rest.util.JacksonMapperProvider;
+import com.wegas.core.tools.FindAndReplacePayload;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -35,7 +36,14 @@ import java.util.zip.ZipInputStream;
 import javax.ejb.Stateless;
 import javax.inject.Inject;
 import javax.jcr.RepositoryException;
-import javax.ws.rs.*;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.StreamingOutput;
@@ -44,8 +52,6 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.glassfish.jersey.media.multipart.FormDataParam;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -56,7 +62,6 @@ import org.slf4j.LoggerFactory;
 @Produces(MediaType.APPLICATION_JSON)
 public class GameModelController {
 
-    private static final Logger logger = LoggerFactory.getLogger(GameModelController.class);
     /**
      *
      */
@@ -111,7 +116,7 @@ public class GameModelController {
     /**
      * Create a model
      *
-     * @param ids      comma separated list of gameModel id to base the new model on
+     * @param ids      comma separated list of newVersion id to base the new model on
      * @param template
      *
      * @return a brand new model, not yet propagated
@@ -149,21 +154,21 @@ public class GameModelController {
             if (list.size() == idList.size()) {
                 sb.append(", x");
             } else {
-                sb.append(",");
+                sb.append(',');
                 idList.stream().forEach(id -> sb.append(",").append(list.contains(id) ? "x" : ""));
             }
             sb.append(System.lineSeparator());
         });
 
         return Response.ok(sb.toString(), "text/csv")
-                .header("Content-Disposition", "attachment; filename="
-                        + "variables.csv").build();
+            .header("Content-Disposition", "attachment; filename="
+                + "variables.csv").build();
     }
 
     @GET
     @Path("{modelId: [1-9][0-9]*}/Integrate/{scenarioId: [1-9][0-9]*}")
     public GameModel integrate(@PathParam("modelId") Long modelId,
-            @PathParam("scenarioId") Long scenarioId) throws IOException, RepositoryException {
+        @PathParam("scenarioId") Long scenarioId) throws IOException, RepositoryException {
 
         GameModel model = gameModelFacade.find(modelId);
         GameModel scenario = gameModelFacade.find(scenarioId);
@@ -220,7 +225,7 @@ public class GameModelController {
      *
      * Duplicate model
      *
-     * @param templateGameModelId id of the gameModel to duplicate
+     * @param templateGameModelId id of the newVersion to duplicate
      * @param gm                  template to fetch the new name in
      *
      * @return the new game model
@@ -239,9 +244,9 @@ public class GameModelController {
 
     /**
      *
-     * Duplicate and set new gameModel name
+     * Duplicate and set new newVersion name
      *
-     * @param templateGameModelId id of the gameModel to duplicate
+     * @param templateGameModelId id of the newVersion to duplicate
      * @param gm                  template to fetch the new name in
      *
      * @return the new game model
@@ -273,7 +278,7 @@ public class GameModelController {
     @POST
     @Path("{templateGameModelId : [1-9][0-9]*}/UpdateFromPlayer/{playerId: [1-9][0-9]*}")
     public GameModel updateFromPlayer(@PathParam("templateGameModelId") Long templateGameModelId,
-            @PathParam("playerId") Long playerId) throws IOException {
+        @PathParam("playerId") Long playerId) throws IOException {
 
         GameModel gm = gameModelFacade.setDefaultInstancesFromPlayer(templateGameModelId, playerId);
         gameModelFacade.reset(gm);
@@ -284,22 +289,22 @@ public class GameModelController {
     /**
      * EXPERIMENTAL & BUGGY
      * <p>
-     * Create a new gameModel based on given player instances status (new gameModel default instance
-     * fetch from player ones)
+     * Create a new newVersion based on given player instances status (new newVersion default
+     * instance fetch from player ones)
      * <p>
-     * This one is Buggy since several instances merge are not cross-gameModel compliant
+     * This one is Buggy since several instances merge are not cross-newVersion compliant
      *
      * @param templateGameModelId
      * @param playerId
      *
-     * @return the new gameModel
+     * @return the new newVersion
      *
      * @throws IOException
      */
     @POST
     @Path("{templateGameModelId : [1-9][0-9]*}/CreateFromPlayer/{playerId: [1-9][0-9]*}")
     public GameModel createFromPlayer(@PathParam("templateGameModelId") Long templateGameModelId,
-            @PathParam("playerId") Long playerId) throws IOException {
+        @PathParam("playerId") Long playerId) throws IOException {
 
         GameModel duplicate = gameModelFacade.createFromPlayer(templateGameModelId, playerId);
 
@@ -311,14 +316,14 @@ public class GameModelController {
      * @param file
      * @param details
      *
-     * @return the new uploaded gameModel
+     * @return the new uploaded newVersion
      *
      * @throws IOException
      */
     @POST
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public GameModel upload(@FormDataParam("file") InputStream file,
-            @FormDataParam("file") FormDataBodyPart details) throws IOException, RepositoryException {
+        @FormDataParam("file") FormDataBodyPart details) throws IOException, RepositoryException {
 
         GameModel gameModel;
 
@@ -329,11 +334,66 @@ public class GameModelController {
             gameModelFacade.createWithDebugGame(gameModel);
             return gameModel;
         } else if (details.getContentDisposition().getFileName().endsWith(".wgz")) {
-            try ( ZipInputStream zip = new ZipInputStream(file, StandardCharsets.UTF_8)) {
+            try (ZipInputStream zip = new ZipInputStream(file, StandardCharsets.UTF_8)) {
                 return gameModelFacade.unzip(zip);
             }
         } else {
             throw new WegasIncompatibleType("Unknown file type");
+        }
+    }
+
+    @PUT
+    @Path("{gameModelId: [1-9][0-9]*}/Patch")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public GameModel patch(@PathParam("gameModelId") Long gameModelId,
+        @FormDataParam("file") InputStream file,
+        @FormDataParam("file") FormDataBodyPart details) throws IOException, RepositoryException {
+
+        GameModel gameModel = gameModelFacade.find(gameModelId);
+        GameModel newVersion = null;
+
+        if (details.getMediaType().equals(MediaType.APPLICATION_JSON_TYPE)) {
+            newVersion = JacksonMapperProvider.getMapper().readValue(file, GameModel.class);
+        } else if (details.getContentDisposition().getFileName().endsWith(".wgz")) {
+            try (ZipInputStream zip = new ZipInputStream(file, StandardCharsets.UTF_8)) {
+                newVersion = gameModelFacade.extractGameModelFromWGZ(zip);
+            }
+        }
+
+        if (gameModel != null && newVersion != null) {
+            return gameModelFacade.patch(gameModel, newVersion);
+        } else {
+            throw WegasErrorMessage.error("Nothing to patch...");
+        }
+    }
+
+    @PUT
+    @Path("{gameModelId: [1-9][0-9]*}/PatchDiff")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public PatchDiff patchDiff(@PathParam("gameModelId") Long gameModelId,
+        @FormDataParam("file") InputStream file,
+        @FormDataParam("file") FormDataBodyPart details) throws IOException, RepositoryException {
+
+        GameModel gameModel = gameModelFacade.find(gameModelId);
+        GameModel newVersion = null;
+
+        if (details.getMediaType().equals(MediaType.APPLICATION_JSON_TYPE)) {
+            newVersion = JacksonMapperProvider.getMapper().readValue(file, GameModel.class);
+        } else if (details.getContentDisposition().getFileName().endsWith(".wgz")) {
+            try (ZipInputStream zip = new ZipInputStream(file, StandardCharsets.UTF_8)) {
+                newVersion = gameModelFacade.extractGameModelFromWGZ(zip);
+            }
+        }
+
+        if (newVersion != null) {
+            // preserve name and comments
+            newVersion.setComments(gameModel.getComments());
+            newVersion.setName(gameModel.getName());
+
+            WegasEntityPatch diff = new WegasEntityPatch(gameModel, newVersion, true);
+            return diff.diffForce();
+        } else {
+            return null;
         }
     }
 
@@ -354,9 +414,9 @@ public class GameModelController {
         String filename = URLEncoder.encode(gameModelFacade.find(gameModelId).getName().replaceAll("\\" + "s+", "_") + ".wgz", StandardCharsets.UTF_8.displayName());
 
         return Response.ok(output, "application/zip").
-                header("content-disposition",
-                        "attachment; filename="
-                        + filename).build();
+            header("content-disposition",
+                "attachment; filename="
+                + filename).build();
     }
 
     /**
@@ -377,7 +437,7 @@ public class GameModelController {
     @Path("{entityId : [1-9][0-9]*}/{filename: .*\\.json}")
     public Response downloadJSON(@PathParam("entityId") Long entityId, @PathParam("filename") String filename) throws UnsupportedEncodingException {
         return Response.ok(this.get(entityId))
-                .header("Content-Disposition", "attachment; filename=" + URLEncoder.encode(filename, StandardCharsets.UTF_8.displayName())).build();
+            .header("Content-Disposition", "attachment; filename=" + URLEncoder.encode(filename, StandardCharsets.UTF_8.displayName())).build();
     }
 
     /**
@@ -460,7 +520,7 @@ public class GameModelController {
     @GET
     @Path("permissions/{type: [A-Z]*}/status/{status: [A-Z]*}")
     public Map<Long, List<String>> getPermissionsMatrix(@PathParam("status") final GameModel.Status status,
-            @PathParam("type") final GameModel.GmType type) {
+        @PathParam("type") final GameModel.GmType type) {
         return gameModelFacade.getPermissionMatrix(type, status);
     }
 
@@ -489,8 +549,8 @@ public class GameModelController {
     @GET
     @Path("type/{type: [A-Z]*}/status/{status: [A-Z]*}")
     public Collection<GameModel> findByTypeAndStatus(
-            @PathParam("type") final GameModel.GmType type,
-            @PathParam("status") final GameModel.Status status) {
+        @PathParam("type") final GameModel.GmType type,
+        @PathParam("status") final GameModel.Status status) {
         return gameModelFacade.findByTypeStatusAndUser(type, status);
     }
 
@@ -518,8 +578,8 @@ public class GameModelController {
     @GET
     @Path("type/{type: [A-Z]*}/status/{status: [A-Z]*}/count")
     public int countByTypeAndStatus(
-            @PathParam("type") final GameModel.GmType type,
-            @PathParam("status") final GameModel.Status status) {
+        @PathParam("type") final GameModel.GmType type,
+        @PathParam("status") final GameModel.Status status) {
         return this.findByTypeAndStatus(type, status).size();
     }
 
@@ -535,13 +595,10 @@ public class GameModelController {
     public GameModel delete(@PathParam("entityId") Long entityId) {
         SecurityUtils.getSubject().checkPermission("GameModel:Delete:gm" + entityId);
         GameModel entity = gameModelFacade.find(entityId);
-        switch (entity.getStatus()) {
-            case LIVE:
-                gameModelFacade.bin(entity);
-                break;
-            case BIN:
-                gameModelFacade.delete(entity);
-                break;
+        if (entity.getStatus() == GameModel.Status.LIVE) {
+            gameModelFacade.bin(entity);
+        } else if (entity.getStatus() == GameModel.Status.BIN) {
+            gameModelFacade.delete(entity);
         }
         // gameModelFacade.asyncRemove(entityId);
         return entity;
@@ -584,7 +641,7 @@ public class GameModelController {
     @POST
     @Path("{gameModelId: [1-9][0-9]*}/FindAndReplace")
     public String findAndReplace(@PathParam("gameModelId") Long gameModelId,
-            FindAndReplacePayload payload) {
+        FindAndReplacePayload payload) {
         return gameModelFacade.findAndReplace(gameModelId, payload);
     }
 
@@ -597,7 +654,7 @@ public class GameModelController {
     @GET
     @Path("{gameModelId: [1-9][0-9]*}/FindAllRefToFiles/{variableId: ([1-9][0-9]*)?}")
     public Set<String> findRefToFiles(
-        @PathParam("gameModelId") Long gameModelId, 
+        @PathParam("gameModelId") Long gameModelId,
         @PathParam("variableId") Long vdId) {
         return gameModelFacade.findAllRefToFiles(gameModelId, vdId);
     }
@@ -605,7 +662,7 @@ public class GameModelController {
     @GET
     @Path("{gameModelId: [1-9][0-9]*}/TestPlayer")
     public Player getTestPlayer(
-            @PathParam("gameModelId") Long gameModelId
+        @PathParam("gameModelId") Long gameModelId
     ) {
         if (gameModelId != null) {
             return playerFacade.findDebugPlayerByGameModelId(gameModelId);

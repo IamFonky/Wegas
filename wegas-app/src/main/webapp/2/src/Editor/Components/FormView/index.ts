@@ -14,8 +14,8 @@ import { Script } from './Script/Script';
 import { Code } from './Code';
 import {
   TreeVariableSelect,
-  ScripableVariableSelect,
   TreeVSelect,
+  LabeledScripableVariableSelect,
 } from './TreeVariableSelect';
 import translatable from './translatable';
 import EntityArrayFieldSelect from './EntityArrayFieldSelect';
@@ -25,25 +25,40 @@ import { TimestampView } from './Timestamp';
 import { VariableInput } from './Script/VariableInput';
 import PageSelect from './PageSelect';
 import StatementView from './Script/Expressions/ExpressionEditor';
+import HashListView from './HashList';
+import PageLoaderSelect from './PageLoaderSelect';
+import FileSelector from './FileSelector';
+import { CustomScript } from './CustomScript';
+import ThemeModeSelect from './ThemeModeSelect';
+import PathSelector from './PathSelector';
+import AttachmentSelector from './AttachmentSelector';
+import { ScriptableString } from './ScriptableString';
+import { ScriptablePath } from './ScriptablePath';
+import { ScriptableBoolean } from './ScriptableBoolean';
 
 export const DEFINED_VIEWS = {
   hidden,
   uneditable,
   object: ObjectView,
+  hashlist: HashListView,
   string: StringInput,
   i18nstring: translatable(StringInput),
   number: StringInput,
   boolean: BooleanView,
+  scriptableBoolean: ScriptableBoolean,
   textarea: Textarea,
   array: ArrayWidget,
   select: Select,
   pageselect: PageSelect,
+  pagesloaderselect: PageLoaderSelect,
   html: LabeledHTMLEditor,
   i18nhtml: translatable(LabeledHTMLEditor),
   script: Script,
+  customscript: CustomScript,
   code: Code,
   variableselect: TreeVariableSelect,
-  scriptableVariableSelect: ScripableVariableSelect,
+  scriptableVariableSelect: LabeledScripableVariableSelect,
+  scriptableString: ScriptableString,
   variableInput: VariableInput,
   entityarrayfieldselect: EntityArrayFieldSelect,
   flatvariableselect: FlatVariableSelect,
@@ -52,10 +67,15 @@ export const DEFINED_VIEWS = {
   listchildren: ListChildrenSelectView,
   listchildrennull: ListChildrenNullSelectView,
   treeselect: TreeVSelect,
+  thememodeselect: ThemeModeSelect,
+  file: FileSelector,
+  path: PathSelector,
+  scriptablepath: ScriptablePath,
+  attachment: AttachmentSelector,
 };
 setDefaultWidgets(DEFINED_VIEWS);
 
-type ViewTypes = keyof typeof DEFINED_VIEWS;
+export type ViewTypes = keyof typeof DEFINED_VIEWS;
 type PropsType<T> = T extends React.ComponentType<infer U>
   ? U
   : T extends (p: infer P) => unknown

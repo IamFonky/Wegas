@@ -1,33 +1,45 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.rest;
 
 import com.wegas.core.ejb.GameModelFacade;
+import com.wegas.core.ejb.JCRFacade;
 import com.wegas.core.ejb.ModelFacade;
 import com.wegas.core.ejb.RequestManager;
 import com.wegas.core.ejb.VariableDescriptorFacade;
 import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.exception.client.WegasNotFoundException;
 import com.wegas.core.exception.internal.WegasNoResultException;
+import com.wegas.core.jcr.content.AbstractContentDescriptor;
+import com.wegas.core.jcr.content.ContentConnector;
 import com.wegas.core.persistence.game.GameModel;
 import com.wegas.core.persistence.variable.DescriptorListI;
 import com.wegas.core.persistence.variable.ModelScoped;
 import com.wegas.core.persistence.variable.VariableDescriptor;
 import com.wegas.core.persistence.variable.scope.AbstractScope;
+import com.wegas.survey.persistence.SurveyDescriptor;
+import com.wegas.survey.persistence.SurveyInstance;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import javax.ejb.Stateless;
 import javax.inject.Inject;
-import javax.ws.rs.*;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import org.slf4j.Logger;
@@ -151,7 +163,7 @@ public class VariableDescriptorController {
             VariableDescriptor parent = variableDescriptorFacade.find(gm, entityName);
 
             if (parent instanceof DescriptorListI) {
-                return variableDescriptorFacade.createChild(gm, (DescriptorListI) parent, entity, false);
+                return variableDescriptorFacade.createChild(gm, (DescriptorListI) parent, entity, false, false);
             } else {
                 throw WegasErrorMessage.error("Parent entity does not allow children");
             }
@@ -187,7 +199,7 @@ public class VariableDescriptorController {
 
     @PUT
     @Path("{id: [1-9][0-9]*}/changeScope/{scopeType: GameModelScope|TeamScope|PlayerScope}")
-    public VariableDescriptor changeScopeRecursivly(@PathParam("id") Long vdId,
+    public VariableDescriptor changeScopeRecursively(@PathParam("id") Long vdId,
         @PathParam("scopeType") AbstractScope.ScopeType scopeType) {
         return variableDescriptorFacade.changeScopeRecursively(vdId, scopeType);
     }
@@ -327,8 +339,8 @@ public class VariableDescriptorController {
 
     /**
      * Import a variable from the source gameModel and import it within the target gameModel. Such
-     * an import is recursive and all referenced files are {@link JCRFacade#importFile(com.wegas.core.jcr.content.AbstractContentDescriptor,
-     * com.wegas.core.jcr.content.ContentConnector)  imported} too.
+     * an import is recursive and all referenced files are
+     * {@link JCRFacade#importFile(AbstractContentDescriptor, ContentConnector) imported} too.
      * <p>
      * Such imported files may be renamed to avoid overriding preexisting files.
      * <p>
@@ -337,21 +349,105 @@ public class VariableDescriptorController {
      *
      * @param gameModelId  the gameModel in which to put the variable
      * @param vdId         the variable to import
+     * @param vdName       the name of the target (new) variable
      * @param newScopeType if set, change scope recursively
      *
      * @return
      */
     @POST
-    @Path("CherryPick/{vdId: [1-9][0-9]*}{sep2: /?}{newScopeType: (PlayerScope|TeamScope|GameModelScope)?}")
+    @Path("CherryPick{withLanguages: (WithLanguages)?}/{vdId: [1-9][0-9]*}{sep2: /?}{vdName: [A-Za-z0-9_$]*}{sep3: /?}{newScopeType: (PlayerScope|TeamScope|GameModelScope)?}")
     public VariableDescriptor cherryPick(
+        @PathParam("withLanguages") String withLanguages,
         @PathParam("gameModelId") Long gameModelId,
         @PathParam("vdId") Long vdId,
+        @PathParam("vdName") String vdName,
         @PathParam("newScopeType") AbstractScope.ScopeType newScopeType) {
 
         VariableDescriptor vd = variableDescriptorFacade.find(vdId);
         GameModel source = vd.getGameModel();
 
-        return variableDescriptorFacade.cherryPick(gameModelId, vd.getName(), source.getId(), newScopeType);
+        boolean withLang = "WithLanguages".equals(withLanguages);
+
+        return variableDescriptorFacade.cherryPick(gameModelId, vd.getName(),
+            source.getId(), vdName, newScopeType, withLang);
+    }
+
+
+    /**
+     * Class for customizing cherryPicked Surveys.
+     */
+    public static final class SurveyConfig {
+
+        private SurveyInstance.SurveyStatus defaultStatus;
+        private Boolean published;
+
+        public SurveyInstance.SurveyStatus getDefaultStatus() {
+            return defaultStatus;
+        }
+
+        public void setDefaultStatus(SurveyInstance.SurveyStatus defaultStatus) {
+            this.defaultStatus = defaultStatus;
+        }
+
+        public Boolean isPublished() {
+            return published;
+        }
+
+        public void setPublished(Boolean published) {
+            this.published = published;
+        }
+    }
+
+    /**
+     * Import a survey variable from the source gameModel into the target gameModel.
+     * Such an import is recursive and all referenced files are
+     * {@link JCRFacade#importFile(AbstractContentDescriptor, ContentConnector) imported} too.
+     * <p>
+     * Such imported files may be renamed to avoid overriding preexisting files.
+     * <p>
+     * /**
+     * Import a survey from another gameModel
+     *
+     * @param gameModelId  the gameModel in which to put the variable
+     * @param vdId         the variable to import
+     * @param vdName       the name of the target (new) variable
+     * @param newScopeType if set, change scope recursively
+     * @param config       if set, custom configuration for the new survey
+     *
+     * @return
+     */
+    @POST
+    @Path("CherryPickSurvey/{vdId: [1-9][0-9]*}{sep2: /?}{vdName: [A-Za-z0-9_$]*}{sep3: /?}{newScopeType: (PlayerScope|TeamScope|GameModelScope)?}")
+    public VariableDescriptor cherryPickSurvey(
+        @PathParam("gameModelId") Long gameModelId,
+        @PathParam("vdId") Long vdId,
+        @PathParam("vdName") String vdName,
+        @PathParam("newScopeType") AbstractScope.ScopeType newScopeType,
+        SurveyConfig config) {
+
+        // first, cherry pick survey as any other variable
+        VariableDescriptor newDesc = this.cherryPick("withLanguages", gameModelId, vdId, vdName, newScopeType);
+
+        // then, apply custom configuration
+        if (newDesc instanceof SurveyDescriptor) {
+            SurveyDescriptor surveyDesc = (SurveyDescriptor) newDesc;
+            if (config != null) {
+                if (config.isPublished() != null) {
+                    surveyDesc.setIsPublished(config.isPublished());
+                }
+                if (config.getDefaultStatus() != null) {
+                    // set default instance status
+                    surveyDesc.getDefaultInstance().setStatus(config.getDefaultStatus());
+                    // update effective instances status
+                    variableDescriptorFacade.getInstances(newDesc).values().forEach(si
+                        -> ((SurveyInstance) si).setStatus(config.getDefaultStatus()));
+                    }
+            }
+
+            return surveyDesc;
+        } else {
+            throw WegasErrorMessage.error("This is not a survey");
+        }
     }
 
     /**

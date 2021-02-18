@@ -1,13 +1,14 @@
 import * as React from 'react';
-import { Menu } from '../Menu';
+import { DropMenu, SelecteDropdMenuItem } from '../DropMenu';
 import { useGameModel } from '../Hooks/useGameModel';
+import { IGameModelLanguage } from 'wegas-ts-api';
 
 interface LanguagesProviderProps {
   lang?: string;
   children?: React.ReactNode;
   availableLang?: IGameModelLanguage[];
 }
-interface LanguagesContext extends LanguagesProviderProps {
+export interface LanguagesContext extends LanguagesProviderProps {
   lang: string;
   selectLang: (lang: string) => void;
   availableLang: IGameModelLanguage[];
@@ -67,19 +68,55 @@ function LanguagesContext({
  */
 export const LanguagesProvider = React.memo(LanguagesContext);
 
+interface LanguageSelectorProps extends ClassStyleId {
+  language?: string;
+  onSelect: (
+    item: SelecteDropdMenuItem<IGameModelLanguage>,
+    keyEvent: ModifierKeysEvent,
+  ) => void;
+  filterActiveLanguages?: boolean;
+}
+export function LanguageSelector({
+  language,
+  onSelect,
+  filterActiveLanguages,
+  style,
+  className,
+}: LanguageSelectorProps) {
+  const { lang, availableLang } = React.useContext(languagesCTX);
+  const [currentLanguage, setCurrentLang] = React.useState(
+    language ? language : lang,
+  );
+  const languages = filterActiveLanguages
+    ? availableLang.filter(language => language.active)
+    : availableLang;
+  return (
+    <DropMenu
+      label={currentLanguage}
+      items={languages.map(language => ({
+        value: language,
+        label: `${language.code} : ${language.lang}`,
+      }))}
+      onSelect={(item, keys) => {
+        setCurrentLang(item.value.code);
+        onSelect(item, keys);
+      }}
+      style={style}
+      containerClassName={className}
+    />
+  );
+}
+
 /**
  * Language selector allows to select language inside the language context given by the LangProvider
  */
-export function LangToggler() {
-  const { lang, selectLang, availableLang } = React.useContext(languagesCTX);
+export function LangToggler(props: ClassStyleId) {
+  const { lang, selectLang } = React.useContext(languagesCTX);
   return (
-    <Menu
-      label={lang}
-      items={availableLang.map(language => ({
-        id: language.code,
-        label: `${language.code} : ${language.lang}`,
-      }))}
-      onSelect={item => selectLang(item.id)}
+    <LanguageSelector
+      {...props}
+      language={lang}
+      onSelect={({ value }) => selectLang(value.code)}
     />
   );
 }

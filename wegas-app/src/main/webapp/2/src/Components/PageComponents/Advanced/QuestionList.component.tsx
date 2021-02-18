@@ -2,43 +2,78 @@ import * as React from 'react';
 import {
   pageComponentFactory,
   registerComponent,
-  PageComponentMandatoryProps,
 } from '../tools/componentFactory';
 import { schemaProps } from '../tools/schemaProps';
-import { FunctionComponent } from 'react';
-import QuestionList from '../../AutoImport/Question/List';
+import { WegasComponentProps } from '../tools/EditableComponent';
+import {
+  IScript,
+  SListDescriptor,
+} from 'wegas-ts-api';
+import { createFindVariableScript } from '../../../Helper/wegasEntites';
+import QuestionList from '../../Outputs/Question/QuestionList';
+import { entityIs } from '../../../data/entities';
+import { useScript } from '../../Hooks/useScript';
 
-interface QuestionListDisplayProps extends PageComponentMandatoryProps {
-  questionList?: string;
+interface QuestionListDisplayProps extends WegasComponentProps {
+  questionList?: IScript;
+  autoOpenFirst: boolean;
 }
 
-const QuestionListDisplay: FunctionComponent<QuestionListDisplayProps> = ({
-  EditHandle,
+export default function QuestionListDisplay({
   questionList,
-}) => {
-  return (
-    <>
-      <EditHandle />
-      {questionList === undefined ? (
-        <pre>No selected list</pre>
-      ) : (
-        <QuestionList variable={questionList} />
-      )}
-    </>
+  autoOpenFirst,
+  context,
+}: QuestionListDisplayProps) {
+    const descriptor = useScript<SListDescriptor>(
+    questionList,
+    context,
   );
-};
+
+  if (questionList === undefined) {
+    return <pre>No selected list</pre>;
+  }
+
+
+  else if (descriptor == null || !entityIs(descriptor, "ListDescriptor")) {
+    return <pre>Descriptor not returned as SListDescriptor</pre>
+  }
+
+  return (
+    <QuestionList
+    questionList = {descriptor}
+    autoOpenFirst = {autoOpenFirst}
+    />
+  );
+}
 
 registerComponent(
-  pageComponentFactory(
-    QuestionListDisplay,
-    'QuestionList',
-    'bars',
-    {
-      questionList: schemaProps.scriptVariable('Question list', true, [
-        'ListDescriptor',
-      ]),
+  pageComponentFactory({
+    component: QuestionListDisplay,
+    componentType: 'Advanced',
+    name: 'QuestionList',
+    icon: 'bars',
+    schema: {
+      questionList: schemaProps.scriptVariable({
+        label: 'Question list',
+        required: true,
+        returnType: [
+          'SListDescriptor',
+          'SQuestionDescriptor',
+          'SListDescriptor[]',
+          'SQuestionDescriptor[]',
+        ],
+      }),
+      autoOpenFirst: schemaProps.boolean({
+        label: 'Automatically open first item',
+        value: true,
+      }),
     },
-    ['string'],
-    () => ({}),
-  ),
+    allowedVariables: ['ListDescriptor', 'QuestionDescriptor'],
+    getComputedPropsFromVariable: v => ({
+      questionList: createFindVariableScript(v),
+      style: {
+        overflow: 'auto',
+      },
+    }),
+  }),
 );

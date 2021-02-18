@@ -1,33 +1,78 @@
 import * as React from 'react';
 import { createStore, Reducer, applyMiddleware } from 'redux';
 import u from 'immer';
-import { composeEnhancers } from '../../../data/store';
+import { composeEnhancers } from '../../../data/Stores/store';
 import thunk, { ThunkMiddleware } from 'redux-thunk';
 import { useAnyStore } from '../../Hooks/storeHookFactory';
 import {
-  EditableComponent,
+  WegasComponentProps,
   PageComponentProps,
-  EditorHandleProps,
+  DropZones,
 } from './EditableComponent';
 import { Icon } from '../../../Editor/Components/Views/FontAwesome';
+import { SchemaPropsSchemas } from './schemaProps';
+import {
+  IVariableDescriptor,
+  WegasClassNameAndScriptableTypes,
+} from 'wegas-ts-api';
+import { HashListChoices } from '../../../Editor/Components/FormView/HashList';
+import { ChildrenDeserializerProps } from './PageDeserializer';
+import { classStyleIdShema } from './options';
+
+export const componentTypes = [
+  'Other',
+  'Layout',
+  'Input',
+  'Output',
+  'Advanced',
+  'Programmatic',
+] as const;
+
+export type ComponentType = typeof componentTypes[number];
+
+/**
+ * ContainerComponent - Defines the type and management of a container component
+ */
+export interface ContainerComponent<P = {}> {
+  isVertical: (props?: P) => boolean | undefined;
+  ChildrenDeserializer: React.FunctionComponent<ChildrenDeserializerProps<P>>;
+  noContainer?: (props?: P) => boolean | undefined;
+  childrenSchema: HashListChoices;
+  childrenLayoutKeys?: string[];
+  deleteChildren?: (
+    page: WegasComponent,
+    path: number[],
+  ) => WegasComponent | undefined;
+}
 
 export interface PageComponent<
-  P = { [name: string]: unknown } & { children?: WegasComponent[] }
+  P extends WegasComponentProps = WegasComponentProps,
+  T extends IVariableDescriptor['@class'] = IVariableDescriptor['@class']
 > {
-  getComponent: (
-    uneditable?: boolean,
-  ) => React.FunctionComponent<P & PageComponentProps>;
-  getName: () => string;
-  getIcon: () => Icon;
-  getSchema: () => SimpleSchema;
-  getAllowedVariables: () => (keyof WegasScriptEditorNameAndTypes)[];
+  WegasComponent: React.FunctionComponent<P>;
+  container?: ContainerComponent<P>;
+  manageOnClick?: boolean;
+  componentType: ComponentType;
+  componentName: string;
+  icon: Icon;
+  dropzones?: DropZones;
+  schema: {
+    description: string;
+    properties: { [prop: string]: SchemaPropsSchemas };
+  };
+  /**
+   * indicates for which kind of variables this component suits well
+   */
+  allowedVariables?: T[];
   /**
    * gives a computed list of props from variable, if the variable is undefined, gives default props
    */
-  getComputedPropsFromVariable: (variable?: WegasScriptEditorReturnType) => P;
+  getComputedPropsFromVariable?: (
+    variable?: WegasClassNameAndScriptableTypes[T],
+  ) => Omit<P, keyof PageComponentProps>;
 }
 
-interface PageComponentsState {
+export interface PageComponentsState {
   [name: string]: PageComponent;
 }
 
@@ -57,20 +102,31 @@ type PageComponentAction<
   A extends keyof typeof PageComponentActionCreator = keyof typeof PageComponentActionCreator
 > = ReturnType<typeof PageComponentActionCreator[A]>;
 
-const pageComponentReducer: Reducer<Readonly<PageComponentsState>> = u(
-  (state: PageComponentsState, action: PageComponentAction) => {
-    switch (action.type) {
-      case PageComponentActionTypes.ADD_COMPONENT: {
-        return {
-          ...state,
-          [action.payload.componentName]: action.payload.component,
-        };
-      }
+const pageComponentReducer: Reducer<
+  Readonly<PageComponentsState>,
+  PageComponentAction
+> = u((state: PageComponentsState, action: PageComponentAction) => {
+  switch (action.type) {
+    case PageComponentActionTypes.ADD_COMPONENT: {
+      state[action.payload.componentName] = action.payload.component;
+      break;
     }
-    return state;
-  },
-  {},
-);
+  }
+}, {});
+
+/**
+ * importPageComponents will import all pages component in the project. This function must be called in the entry file.
+ */
+export const importPageComponents = () => {
+  // Importing all the files containing ".component." to allow component registration without explicit import
+  const componentModules = require.context(
+    '../../../',
+    true,
+    /\.component\./,
+    'lazy-once',
+  );
+  componentModules.keys().map(k => componentModules(k));
+};
 
 export const componentsStore = createStore(
   pageComponentReducer,
@@ -94,61 +150,53 @@ export function usePageComponentStore<R>(
   return useAnyStore(selector, shouldUpdate, componentsStore);
 }
 
-export interface PageComponentMandatoryProps {
-  /**
-   * EditHandle - a handle component that appear in edit mode
-   */
-  EditHandle: React.FunctionComponent<EditorHandleProps>;
-  /**
-   * displayBorders - ask the component to highlight its borders
-   */
-  showBorders?: boolean;
-  /**
-   * path - the location of the component in the page
-   */
-  path?: string[];
-}
-
 export function pageComponentFactory<
-  P extends PageComponentMandatoryProps,
-  T extends keyof WegasScriptEditorNameAndTypes,
-  V extends Readonly<WegasScriptEditorNameAndTypes[T]>,
-  R extends Omit<P, keyof PageComponentMandatoryProps>
+  C extends ContainerComponent<P> | undefined,
+  P extends WegasComponentProps,
+  T extends IVariableDescriptor['@class']
 >(
-  component: React.FunctionComponent<P>,
-  componentName: string,
-  icon: Icon,
-  schema: SimpleSchema,
-  allowedVariables: T[],
-  getComputedPropsFromVariable: (variable?: V) => R,
-) {
-  function generateComponent(uneditable?: boolean) {
-    const Editable: React.FunctionComponent<P & PageComponentProps> = props => (
-      <EditableComponent
-        {...props}
-        componentName={componentName}
-        wegasChildren={props.children}
-        uneditable={uneditable}
-      >
-        {(content, EditHandle, showBorders) =>
-          component({ ...props, children: content, EditHandle, showBorders })
-        }
-      </EditableComponent>
-    );
-    return Editable;
-  }
+  param: {
+    component: React.FunctionComponent<P>;
+    componentType: ComponentType;
+    container?: C;
+    manageOnClick?: boolean;
+    name: string;
+    icon: Icon;
+    dropzones?: DropZones;
+    schema: { [prop: string]: SchemaPropsSchemas };
+    allowedVariables?: T[];
+  } & (C extends undefined
+    ? {
+        getComputedPropsFromVariable?: (
+          variable?: WegasClassNameAndScriptableTypes[T],
+        ) => Omit<P, keyof PageComponentProps>;
+      }
+    : {
+        getComputedPropsFromVariable: (
+          variable?: WegasClassNameAndScriptableTypes[T],
+        ) => Omit<P, keyof PageComponentProps> & { children: WegasComponent[] };
+      }),
+): PageComponent<P> {
   return {
-    getComponent: (uneditable?: boolean) => generateComponent(uneditable),
-    getIcon: () => icon,
-    getName: () => componentName,
-    getSchema: () => ({
-      description: componentName,
-      properties: schema,
-    }),
-    getAllowedVariables: () => allowedVariables,
-    getComputedPropsFromVariable,
+    WegasComponent: param.component,
+    componentType: param.componentType,
+    container: param.container,
+    manageOnClick: param.manageOnClick,
+    icon: param.icon,
+    dropzones: param.dropzones,
+    componentName: param.name,
+    schema: {
+      description: param.name,
+      properties: { ...classStyleIdShema, ...param.schema },
+    },
+    allowedVariables: param.allowedVariables,
+    getComputedPropsFromVariable: param.getComputedPropsFromVariable,
   };
 }
+
+export type PageComponentFactorySchemas = ReturnType<
+  typeof pageComponentFactory
+>['schema'];
 
 /**
  * Function that registers a component dynamically.
@@ -160,6 +208,23 @@ export const registerComponent: (
   component: PageComponent,
 ) => void = component => {
   componentsStore.dispatch(
-    PageComponentActionCreator.ADD_COMPONENT(component.getName(), component),
+    PageComponentActionCreator.ADD_COMPONENT(
+      component.componentName,
+      component,
+    ),
   );
+};
+
+/**
+ * Importing all the files containing ".component.".
+ * Allows component registration without explicit import within the hole project path
+ */
+export const importComponents = () => {
+  const componentModules = require.context(
+    '../../../',
+    true,
+    /\.component\./,
+    'lazy-once',
+  );
+  componentModules.keys().map(k => componentModules(k));
 };

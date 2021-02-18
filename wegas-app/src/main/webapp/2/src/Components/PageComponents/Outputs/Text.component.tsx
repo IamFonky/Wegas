@@ -1,32 +1,44 @@
 import * as React from 'react';
-import { Text, TextProps } from '../../Outputs/Text';
+import { Text } from '../../Outputs/Text';
 import {
-  PageComponentMandatoryProps,
   registerComponent,
   pageComponentFactory,
 } from '../tools/componentFactory';
 import { schemaProps } from '../tools/schemaProps';
+import { WegasComponentProps } from '../tools/EditableComponent';
+import { IScript } from 'wegas-ts-api';
+import { createFindVariableScript } from '../../../Helper/wegasEntites';
+import { useScript } from '../../Hooks/useScript';
+import { classStyleIdShema } from '../tools/options';
 
-function PlayerText(props: TextProps & PageComponentMandatoryProps) {
-  const { EditHandle } = props;
-  return (
-    <>
-      <EditHandle />
-      <Text {...props} />
-    </>
+export interface PlayerTextProps extends WegasComponentProps {
+  text?: IScript;
+}
+
+function PlayerText({ text, context, className, style, id }: PlayerTextProps) {
+  const content = useScript<string>(text, context);
+  return !text ? (
+    <span id={id} className={className} style={style}>
+      No text
+    </span>
+  ) : (
+    <Text id={id} text={content} className={className} style={style} />
   );
 }
 
 registerComponent(
-  pageComponentFactory(
-    PlayerText,
-    'Text',
-    'paragraph',
-    {
-      script: schemaProps.scriptVariable('Variable', true, ['TextDescriptor']),
-      className: schemaProps.string('ClassName', false),
+  pageComponentFactory({
+    component: PlayerText,
+    componentType: 'Output',
+    name: 'Text',
+    icon: 'paragraph',
+    schema: {
+      text: schemaProps.scriptString({ label: 'Text', richText: true }),
+      ...classStyleIdShema,
     },
-    ['ISTextDescriptor'],
-    () => ({}),
-  ),
+    allowedVariables: ['TextDescriptor'],
+    getComputedPropsFromVariable: v => ({
+      text: createFindVariableScript(v),
+    }),
+  }),
 );

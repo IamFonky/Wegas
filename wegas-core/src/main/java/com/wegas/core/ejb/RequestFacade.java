@@ -1,8 +1,9 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.ejb;
@@ -12,6 +13,7 @@ import com.wegas.core.ejb.statemachine.StateMachineFacade;
 import com.wegas.core.persistence.AbstractEntity;
 import com.wegas.core.persistence.game.Player;
 import com.wegas.core.security.persistence.User;
+import com.wegas.core.security.util.ActAsPlayer;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.Set;
@@ -53,13 +55,9 @@ public class RequestFacade {
     @Inject
     private StateMachineFacade stateMachineFacade;
 
-    @Inject
-    private JPACacheHelper jpaCacheHelper;
-
     /**
      *
-     * @Inject
-     * private Event<PlayerAction> playerActionEvent;
+     * @Inject private Event<PlayerAction> playerActionEvent;
      */
     /**
      * @return the variableInstanceManager
@@ -96,20 +94,6 @@ public class RequestFacade {
 
     /**
      *
-     * @param playerId
-     */
-    public void setPlayer(Long playerId) {
-        if (playerId != null) {
-            Player p = playerFacade.find(playerId);
-            //playerFacade.getEntityManager().detach(p);
-            this.requestManager.setPlayer(p);
-        } else {
-            requestManager.setPlayer(null);
-        }
-    }
-
-    /**
-     *
      * @return The player associated with the current request, if any.
      */
     public Player getPlayer() {
@@ -135,17 +119,19 @@ public class RequestFacade {
      */
     public void commit(Player player) {
         if (!requestManager.isTestEnv()) {
-            /*
+            try (ActAsPlayer a = requestManager.actAsPlayer(player)) {
+                /*
              * Flush is required to triggered EntityListener's lifecycles events which populate
              * requestManager touched (deleted, updated and so on) entities
-             */
-            EntityManager em = requestManager.getEntityManager();
+                 */
+                EntityManager em = requestManager.getEntityManager();
 
-            requestManager.getEntityManager().flush();
+                requestManager.getEntityManager().flush();
 
-            if (requestManager.getUpdatedEntities().size() > 0 || scriptEvent.isEventFired()) {
-                stateMachineFacade.runStateMachines(player);
-                em.flush();
+                if (requestManager.getUpdatedEntities().size() > 0 || scriptEvent.isEventFired()) {
+                    stateMachineFacade.runStateMachines(player);
+                    em.flush();
+                }
             }
         }
     }
@@ -207,6 +193,7 @@ public class RequestFacade {
 
     /**
      * Not sure it's deprecated... should test...
+     *
      * @deprecated
      */
     @Deprecated

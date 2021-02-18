@@ -4,7 +4,6 @@ import {
   IconPrefix,
   IconDefinition,
   IconName,
-  IconLookup,
 } from '@fortawesome/fontawesome-svg-core';
 import { fas } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon, Props } from '@fortawesome/react-fontawesome';
@@ -12,10 +11,7 @@ import { far } from '@fortawesome/free-regular-svg-icons';
 import { omit } from 'lodash-es';
 
 // These icon definitions MUST be added to library in order for React-Fontawsome to work properly
-library.add({
-  ...fas,
-  ...Object.keys(far).reduce((o, k) => ({ ...o, [k + 'r']: far[k] }), {}),
-});
+library.add(fas, far);
 
 export interface IconString {
   value: string;
@@ -24,7 +20,7 @@ export interface IconString {
   fontWeight?: React.CSSProperties['fontWeight'];
 }
 
-export type Icon = IconName | IconLookup | Props | IconString;
+export type Icon = IconName | Props | IconString;
 export type Icons = Icon | Icon[];
 
 export const prefixes = [
@@ -32,49 +28,69 @@ export const prefixes = [
   /*'fab',*/ 'far' /*'fal', 'fad'*/,
 ] as IconPrefix[];
 
-export const icons = Object.values(fas).reduce(
-  (o: {}, v: IconDefinition) =>
-    typeof v === 'object' && 'iconName' in v && v.iconName !== undefined
-      ? { ...o, [v.iconName]: v }
-      : o,
-  {},
-);
+export const icons = {
+  // undefined: undefined,
+  ...Object.values(fas).reduce(
+    (o: {}, v: IconDefinition) =>
+      typeof v === 'object' && 'iconName' in v && v.iconName !== undefined
+        ? { ...o, [v.iconName]: v }
+        : o,
+    {},
+  ),
+};
 
-function isProps(icon: Icons): icon is Props {
+export function isProps(icon: Icons): icon is Props {
   return !Array.isArray(icon) && typeof icon === 'object' && 'icon' in icon;
 }
 
-function isIconString(icon: Icons): icon is IconString {
+export function isIconString(icon: Icons): icon is IconString {
   return !Array.isArray(icon) && typeof icon === 'object' && 'value' in icon;
 }
 
-function IconDisplay({ icon }: { icon: Icon }) {
+interface IconDisplayProps extends Omit<ClassStyleId, 'id'> {
+  icon: Icon;
+}
+
+function IconDisplay({ icon, style, className }: IconDisplayProps) {
   return isProps(icon) ? (
-    <FontAwesome fixedWidth {...icon} />
+    <FontAwesome fixedWidth {...icon} style={style} className={className} />
   ) : isIconString(icon) ? (
     <div
-      className="fa-layers svg-inline--fa fa-w-16 fa-fw"
+      className={className + ' fa-layers svg-inline--fa fa-w-16 fa-fw'}
       style={{
+        ...style,
         display: 'table-cell',
         verticalAlign: 'middle',
       }}
     >
-      <div style={omit(icon, 'value')}>{icon.value}</div>
+      <div style={{ ...omit(icon, 'value'), ...style }}>{icon.value}</div>
     </div>
   ) : (
-    <FontAwesome fixedWidth icon={icon} />
+    <FontAwesome fixedWidth icon={icon} style={style} className={className} />
   );
 }
 
-export function IconComp({ icon }: { icon: Icons }) {
-  return Array.isArray(icon) ? (
-    <span className="fa-layers fa-fw">
+interface IconCompProps extends Omit<ClassStyleId, 'id'> {
+  icon?: Icons;
+}
+
+export function IconComp({ icon, style, className }: IconCompProps) {
+  return icon == null ? (
+    <pre style={style} className={className}>
+      No icon
+    </pre>
+  ) : Array.isArray(icon) ? (
+    <span style={style} className={className + ' fa-layers fa-fw'}>
       {icon.map((ic: Icon, i) => (
-        <IconDisplay key={JSON.stringify(ic) + String(i)} icon={ic} />
+        <IconDisplay
+          key={JSON.stringify(ic) + String(i)}
+          icon={ic}
+          style={style}
+        />
       ))}
     </span>
   ) : (
-    <IconDisplay icon={icon} />
+    <IconDisplay icon={icon} style={style} className={className} />
   );
 }
 

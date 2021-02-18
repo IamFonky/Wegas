@@ -2,39 +2,65 @@ import * as React from 'react';
 import produce from 'immer';
 import { Actions } from '../../../data';
 import { getIcon, getLabel, getChildren } from '../../editionConfig';
-import { StoreDispatch, store } from '../../../data/store';
-import { Menu, MenuProps } from '../../../Components/Menu';
+import { StoreDispatch, store } from '../../../data/Stores/store';
+import {
+  DropMenu,
+  DropMenuProps,
+  DropMenuItem,
+} from '../../../Components/DropMenu';
 import { withDefault, IconComp } from '../Views/FontAwesome';
 import { asyncSFC } from '../../../Components/HOC/asyncSFC';
 import { VariableDescriptor } from '../../../data/selectors';
+import {
+  IAbstractEntity,
+  IListDescriptor,
+  IQuestionDescriptor,
+  IWhQuestionDescriptor,
+  IChoiceDescriptor,
+  IResult,
+  IEvaluationDescriptorContainer,
+  IPeerReviewDescriptor,
+  IEvaluationDescriptor,
+} from 'wegas-ts-api';
+import { AvailableLayoutTab } from '../Layout';
+import { entityIs } from '../../../data/entities';
 
-function buildMenuItems(variable: IAbstractEntity) {
+function buildMenuItems(
+  variable: IAbstractEntity,
+): Promise<DropMenuItem<IAbstractEntity['@class']>[]> {
   return getChildren(variable).then(children => {
-    return children.map(i => {
-      const Label = asyncSFC(async () => {
-        const entity = { '@class': i };
-        return (
-          <>
-            <IconComp icon={withDefault(getIcon(entity), 'question')} />
-            {getLabel(entity)}
-          </>
-        );
-      });
-      return {
-        label: <Label />,
-        value: i,
-      };
-    });
+    return children
+      .map(i => {
+        const Label = asyncSFC(async () => {
+          const entity = { '@class': i };
+          return (
+            <>
+              <IconComp icon={withDefault(getIcon(entity), 'question')} />
+              {getLabel(entity)}
+            </>
+          );
+        });
+        return {
+          label: <Label />,
+          value: i,
+        };
+      })
+      .filter(
+        item =>
+          !entityIs(variable, 'ListDescriptor') ||
+          variable.allowedTypes.length === 0 ||
+          variable.allowedTypes.includes(item.value),
+      );
   });
 }
 
 interface AddMenuProps {
+  label?: React.ReactNode;
+  prefixedLabel?: boolean;
   localDispatch?: StoreDispatch;
-  onSelect?: MenuProps<{
-    label: JSX.Element;
-    value: string;
-  }>['onSelect'];
-  focusTab?: (tab: string) => void;
+  forceLocalDispatch?: boolean;
+  onSelect?: DropMenuProps<string, DropMenuItem<string>>['onSelect'];
+  focusTab?: (tab: AvailableLayoutTab) => void;
 }
 
 /**
@@ -43,7 +69,10 @@ interface AddMenuProps {
 export const AddMenuParent = asyncSFC(
   async ({
     variable,
+    label,
+    prefixedLabel,
     localDispatch,
+    forceLocalDispatch,
     onSelect,
     focusTab,
   }: {
@@ -51,17 +80,20 @@ export const AddMenuParent = asyncSFC(
   } & AddMenuProps) => {
     const items = await buildMenuItems(variable);
     return (
-      <Menu
+      <DropMenu
+        label={label}
+        prefixedLabel={prefixedLabel}
         items={items}
         icon="plus"
         onSelect={(i, e) => {
           onSelect && onSelect(i, e);
           let dispatch = store.dispatch;
-          if (e.ctrlKey && localDispatch) {
+          if ((e.ctrlKey || forceLocalDispatch) && localDispatch) {
             dispatch = localDispatch;
           } else {
-            focusTab && focusTab('Editor');
+            focusTab && focusTab('Variable Properties');
           }
+
           dispatch(Actions.EditorActions.createVariable(i.value, variable));
         }}
       />
@@ -75,6 +107,7 @@ export const AddMenuChoice = asyncSFC(
   async ({
     variable,
     localDispatch,
+    forceLocalDispatch,
     onSelect,
     focusTab,
   }: {
@@ -82,17 +115,17 @@ export const AddMenuChoice = asyncSFC(
   } & AddMenuProps) => {
     const items = await buildMenuItems(variable);
     return (
-      <Menu
+      <DropMenu
         items={items}
         icon="plus"
         onSelect={(i, e) => {
           onSelect && onSelect(i, e);
           const globalDispatch = store.dispatch;
           let dispatch = globalDispatch;
-          if (e.ctrlKey && localDispatch) {
+          if ((e.ctrlKey || forceLocalDispatch) && localDispatch) {
             dispatch = localDispatch;
           } else {
-            focusTab && focusTab('Editor');
+            focusTab && focusTab('Variable Properties');
           }
 
           dispatch(
@@ -127,6 +160,7 @@ export const AddMenuFeedback = asyncSFC(
   async ({
     variable,
     localDispatch,
+    forceLocalDispatch,
     onSelect,
     focusTab,
     path,
@@ -136,17 +170,17 @@ export const AddMenuFeedback = asyncSFC(
   } & AddMenuProps) => {
     const items = await buildMenuItems(variable);
     return (
-      <Menu
+      <DropMenu
         items={items}
         icon="plus"
         onSelect={(i, e) => {
           onSelect && onSelect(i, e);
           const globalDispatch = store.dispatch;
           let dispatch = globalDispatch;
-          if (e.ctrlKey && localDispatch) {
+          if ((e.ctrlKey || forceLocalDispatch) && localDispatch) {
             dispatch = localDispatch;
           } else {
-            focusTab && focusTab('Editor');
+            focusTab && focusTab('Variable Properties');
           }
 
           const parent = VariableDescriptor.select(

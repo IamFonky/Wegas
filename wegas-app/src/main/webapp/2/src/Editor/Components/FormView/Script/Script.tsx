@@ -2,10 +2,9 @@ import * as React from 'react';
 import { WidgetProps } from 'jsoninput/typings/types';
 import { LabeledView, Labeled } from '../labeled';
 import { CommonView, CommonViewContainer } from '../commonView';
-import { IconButton } from '../../../../Components/Inputs/Button/IconButton';
 import { WegasScriptEditor } from '../../ScriptEditors/WegasScriptEditor';
 import { css } from 'emotion';
-import { store } from '../../../../data/store';
+import { store } from '../../../../data/Stores/store';
 import { runScript } from '../../../../data/Reducer/VariableInstanceReducer';
 import { Player } from '../../../../data/selectors';
 import { WyswygScriptEditor } from './WyswygScriptEditor';
@@ -21,16 +20,23 @@ import {
   isLogicalExpression,
   expressionStatement,
   LogicalExpression,
-  logicalExpression,isBinaryExpression,CallExpression,isEmptyStatement
+  logicalExpression,
+  isBinaryExpression,
+  CallExpression,
+  isEmptyStatement,
 } from '@babel/types';
 import { parse } from '@babel/parser';
 import generate from '@babel/generator';
-import { Menu } from '../../../../Components/Menu';
+import { DropMenu } from '../../../../Components/DropMenu';
 import { ResizeHandle } from '../../ResizeHandle';
+import { createScript } from '../../../../Helper/wegasEntites';
+import { IScript, IVariableDescriptor, IVariableInstance } from 'wegas-ts-api';
+import { Button } from '../../../../Components/Inputs/Buttons/Button';
+import { EmbeddedSrcEditor } from '../../ScriptEditors/EmbeddedSrcEditor';
 
 export const scriptEditStyle = css({
-  // height: '5em',
-  marginTop: '0.8em',
+  minHeight: '5em',
+  // marginTop: '0.8em',
   width: '500px',
 });
 
@@ -119,8 +125,6 @@ function concatStatementsToCondition(
     }
   });
 
-  //binaryExpressions.reverse();
-
   if (canBeMerged) {
     if (binaryExpressions.length === 1) {
       return [expressionStatement(binaryExpressions[0])];
@@ -178,11 +182,7 @@ export function Script({
     (value: string) => {
       if (value !== script.current) {
         script.current = value;
-        onChange({
-          '@class': 'Script',
-          language: 'JavaScript',
-          content: value,
-        });
+        onChange(createScript(value));
       }
     },
     [onChange],
@@ -273,39 +273,44 @@ export function Script({
 
   return (
     <CommonViewContainer view={view} errorMessage={error}>
-      <Labeled label={view.label} description={view.description} /*{...view}*/>
+      <Labeled label={view.label} description={view.description}>
         {({ labelNode }) => {
           return (
             <>
               {labelNode}
               {!error && (
-                <IconButton
+                <Button
                   icon="code"
                   pressed={error !== undefined}
                   onClick={() => setSrcMode(sm => !sm)}
                 />
               )}
               {isServerScript && (
-                <IconButton
+                <Button
                   icon="play"
                   onClick={() => testScript(script.current)}
                 />
               )}
               {isScriptCondition(view.mode) && (
-                <Menu
+                <DropMenu
                   label={operator}
-                  items={operators.map(o => ({ label: o }))}
+                  items={operators.map(o => ({ label: o, value: o }))}
                   onSelect={({ label }) => onSelectOperator(label)}
                 />
               )}
               {srcMode ? (
                 <ResizeHandle minSize={200}>
-                  <WegasScriptEditor
+                  <EmbeddedSrcEditor
                     value={script.current}
                     onChange={onCodeChange}
                     minimap={false}
                     noGutter={true}
                     returnType={returnTypes(view.mode)}
+                    scriptContext={
+                      view.mode === 'SET' ? 'Server internal' : 'Client'
+                    }
+                    Editor={WegasScriptEditor}
+                    EmbeddedEditor={WegasScriptEditor}
                   />
                 </ResizeHandle>
               ) : (

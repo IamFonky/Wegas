@@ -3,7 +3,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /**
@@ -140,14 +140,20 @@ YUI.add("wegas-editor-entityaction", function(Y) {
                         case "Export":
                             i = EditEntityAction.stackedIcon(i, 'fa-file-pdf-o');
                             i.tooltip = 'Export';
+                            i.cssClass += ' wegas-export-entity-icon';
                             break;
                         case "Search for usages":
                             i = EditEntityAction.stackedIcon(i, 'fa-compass');
                             i.tooltip = 'Find usage';
+                            i.cssClass += ' wegas-find-usage-icon';
                             break;
                         case "Reset visibilities":
                             i = EditEntityAction.stackedIcon(i, 'fa-paw');
                             i.tooltip = 'Reset visibilities recursively';
+                            break;
+                        case "Set as default":
+                            i = EditEntityAction.stackedIcon(i, 'fa-star');
+                            i.tooltip = 'Set as default';
                             break;
                         case "Find & Replace":
                             i = EditEntityAction.stackedIcon(i, 'fa-search');

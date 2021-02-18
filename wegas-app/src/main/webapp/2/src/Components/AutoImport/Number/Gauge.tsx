@@ -4,9 +4,12 @@ import {
   useVariableInstance,
 } from '../../Hooks/useVariable';
 import { TranslatableContent } from '../../../data/i18n';
-import { themeVar } from '../../Theme';
 import { FontAwesome } from '../../../Editor/Components/Views/FontAwesome';
 import { css } from 'emotion';
+import { themeVar } from '../../Style/ThemeVars';
+import { INumberDescriptor } from 'wegas-ts-api';
+import { TumbleLoader } from '../../Loader';
+import { wwarn } from '../../../Helper/wegaslog';
 
 const containerStyle = css({
   minWidth: '8em',
@@ -65,26 +68,27 @@ export default function Gauge(props: {
   const descriptor = useVariableDescriptor<INumberDescriptor>(props.variable);
   const instance = useVariableInstance(descriptor);
   if (descriptor === undefined || instance === undefined) {
-    return <span>Not found: {props.variable}</span>;
+    wwarn(`Not found: ${props.variable}`);
+    return <TumbleLoader />;
   }
   const {
     min = descriptor.minValue,
     max = descriptor.maxValue,
-    positiveColor = themeVar.successColor,
-    negativeColor = themeVar.errorColor,
+    positiveColor = themeVar.Common.colors.SuccessColor,
+    negativeColor = themeVar.Common.colors.ErrorColor,
   } = props;
   if (min == undefined || max == undefined) {
     return (
       <span>
         <FontAwesome
-          style={{ color: themeVar.warningColor }}
+          style={{ color: themeVar.Common.colors.WarningColor }}
           icon="exclamation-triangle"
         />
         Missing min or max value
       </span>
     );
   }
-  const boundedValue = Math.max(min, Math.min(max, instance.value));
+  const boundedValue = Math.max(min, Math.min(max, instance.getValue()));
   const neutral = props.neutralValue === undefined ? min : props.neutralValue;
   const neutralAngle = 180 - ratio(neutral, min, max) * 180;
   const start = polarToCartesian(500, 500, 450, neutralAngle);
@@ -98,7 +102,7 @@ export default function Gauge(props: {
         <path
           strokeWidth="75"
           fill="none"
-          stroke={themeVar.disabledColor}
+          stroke={themeVar.Common.colors.DisabledColor}
           d="M 50 500 A 450 450 0 0 1 950 500"
         />
         <path
@@ -114,13 +118,13 @@ export default function Gauge(props: {
           cy={end[1]}
           r="37"
           strokeWidth="20"
-          stroke={themeVar.primaryLighterColor}
-          fill={themeVar.primaryDarkerColor}
+          stroke={themeVar.Common.colors.PrimaryColor}
+          fill={themeVar.Common.colors.HeaderColor}
         />
       </svg>
       <div className={textStyle}>
         <div>{TranslatableContent.toString(descriptor.label)}</div>
-        <div>{instance.value}</div>
+        <div>{instance.getValue()}</div>
       </div>
     </div>
   );

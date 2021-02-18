@@ -2,20 +2,31 @@ import * as React from 'react';
 import { css } from 'emotion';
 import Header from './Header';
 import { DndLinearLayout } from './LinearTabLayout/LinearLayout';
+import { useStore } from '../../data/Stores/store';
+import { visitIndex } from '../../Helper/pages';
+import { PageLoader } from './Page/PageLoader';
+import { ComponentMap } from './LinearTabLayout/DnDTabLayout';
+import { themeVar } from '../../Components/Style/ThemeVars';
+import { State } from '../../data/Reducer/reducers';
 
 const StateMachineEditor = React.lazy(() => import('./StateMachineEditor'));
 const PageEditor = React.lazy(() => import('./Page/PageEditor'));
 const TreeView = React.lazy(() => import('./Variable/VariableTree'));
 const EntityEditor = React.lazy(() => import('./EntityEditor'));
-const FileBrowserWithMeta = React.lazy(() =>
-  import('./FileBrowser/FileBrowser'),
+const FileBrowserWithMeta = React.lazy(
+  () => import('./FileBrowser/FileBrowser'),
 );
 const LibraryEditor = React.lazy(() => import('./ScriptEditors/LibraryEditor'));
 const LanguageEditor = React.lazy(() => import('./LanguageEditor'));
 const PlayLocal = React.lazy(() => import('./PlayLocal'));
-const InstancesEditor = React.lazy(() => import('./Variable/InstancesEditor'));
-const HTMLEditor = React.lazy(() => import('../../Components/HTMLEditor'));
-const ThemeEditor = React.lazy(() => import('../../Components/ThemeEditor'));
+const PlayServer = React.lazy(() => import('./PlayServer'));
+const InstancesEditor = React.lazy(
+  () => import('./Variable/InstanceProperties'),
+);
+const ThemeEditor = React.lazy(
+  () => import('../../Components/Style/ThemeEditor'),
+);
+// const Tester = React.lazy(() => import('../../Testers/HTMLEditorTester'));
 
 const layout = css({
   display: 'flex',
@@ -24,44 +35,51 @@ const layout = css({
 });
 
 export const availableLayoutTabs = {
+  // Tester: <Tester />,
   Variables: <TreeView />,
-  StateMachine: <StateMachineEditor />,
-  Editor: <EntityEditor />,
+  'State Machine': <StateMachineEditor />,
+  'Variable Properties': <EntityEditor />,
   Files: <FileBrowserWithMeta />,
   Scripts: <LibraryEditor />,
-  LanguageEditor: <LanguageEditor />,
-  PlayLocal: <PlayLocal />,
-  InstancesEditor: <InstancesEditor />,
-  TestHTMLEditor: (
-    <HTMLEditor value={'<div class="testClass">Testing testClass</div>'} />
-  ),
-  ThemeEditor: <ThemeEditor />,
-  PageEditor: <PageEditor />,
-};
+  'Language Editor': <LanguageEditor />,
+  'Client Console': <PlayLocal />,
+  'Server Console': <PlayServer />,
+  'Instances Editor': <InstancesEditor />,
+  'Theme Editor': <ThemeEditor />,
+  'Page Editor': <PageEditor />,
+} as const;
 
-export default class AppLayout extends React.Component<
-  {},
-  { editable: boolean }
-> {
-  constructor(props: {}) {
-    super(props);
-    this.state = {
-      editable: false,
-    };
-  }
-  render() {
-    return (
-      <div className={layout}>
-        <Header />
-        <DndLinearLayout
-          tabs={availableLayoutTabs}
-          layout={[
-            ['Variables'],
-            [['PlayLocal'], [['StateMachine'], ['Files']]],
-            ['Editor'],
-          ]}
-        />
-      </div>
-    );
-  }
+export type AvailableLayoutTab = keyof typeof availableLayoutTabs;
+
+export const mainLayoutId = 'MainEditorLayout';
+
+function scenaristPagesSelector(s: State) {
+  return s.pages.index
+    ? visitIndex(s.pages.index.root, item => item).filter(
+        item => item.scenaristPage,
+      )
+    : [];
+}
+
+export default function Layout() {
+  const scenaristPages: ComponentMap = useStore(scenaristPagesSelector).reduce(
+    (o, i) => ({ ...o, [i.name]: <PageLoader selectedPageId={i.id} /> }),
+    {},
+  );
+
+  return (
+    <div
+      className={
+        layout + ' ' + css({ fontFamily: themeVar.Common.others.TextFont2 })
+      }
+      id="WegasLayout"
+    >
+      <Header />
+      <DndLinearLayout
+        tabs={{ ...availableLayoutTabs, ...scenaristPages }}
+        initialLayout={[['Variables', 'Files'], ['Page Editor']]}
+        layoutId={mainLayoutId}
+      />
+    </div>
+  );
 }

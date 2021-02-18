@@ -2,14 +2,14 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-201
- * 9 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 
 import { get, isMatch } from 'lodash-es';
 import { discriminant } from '../normalize';
 import { Game, GameModel, Player, Team, VariableDescriptor, VariableInstance } from '../selectors';
+import { IAbstractEntity } from 'wegas-ts-api';
 
 function findNearestParentInFormVal<T extends IAbstractEntity = IAbstractEntity>(
   formVal: IAbstractEntity,

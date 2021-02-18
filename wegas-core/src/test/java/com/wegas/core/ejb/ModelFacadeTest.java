@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2019 School of Business and Engineering Vaud, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.ejb;
@@ -381,8 +381,10 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         Assert.assertEquals(this.getStringifiedPages(model), this.getStringifiedPages(gameModel1));
         Assert.assertNotEquals(this.getStringifiedPages(model), this.getStringifiedPages(gameModel2));
 
-        Assert.assertEquals(2, pageFacade.getPageIndex(model).size());
-        Assert.assertEquals(3, pageFacade.getPageIndex(gameModel2).size());
+        Assert.assertEquals(2,
+            pageFacade.getPageIndex(model).getRoot().getItems().size());
+        Assert.assertEquals(3,
+            pageFacade.getPageIndex(gameModel2).getRoot().getItems().size());
 
         modelFacade.propagateModel(model.getId());
 
@@ -390,17 +392,20 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         gameModel1 = gameModelFacade.find(gameModel1.getId());
         gameModel2 = gameModelFacade.find(gameModel2.getId());
 
-        Assert.assertEquals(this.getStringifiedPages(model), this.getStringifiedPages(gameModel1));
-        Assert.assertEquals(this.getStringifiedPages(model), this.getStringifiedPages(gameModel2));
+        Assert.assertEquals(this.getStringifiedPages(model),
+            this.getStringifiedPages(gameModel1));
+        Assert.assertEquals(this.getStringifiedPages(model),
+            this.getStringifiedPages(gameModel2));
 
-        Assert.assertEquals(2, pageFacade.getPageIndex(model).size());
+        Assert.assertEquals(2,
+            pageFacade.getPageIndex(model).getRoot().getItems().size());
 
         /**
          * Update pages
          */
         this.setPagesFromStrings(model, "{\"type\": \"List\", \"direction\": \"horizontal\", \"children\": []}",
-                "{\"type\": \"AbsoluteLayout\", \"children\": []}",
-                "{\"type\": \"FlexList\", \"direction\": \"horizontal\", \"children\": []}");
+            "{\"type\": \"AbsoluteLayout\", \"children\": []}",
+            "{\"type\": \"FlexList\", \"direction\": \"horizontal\", \"children\": []}");
         model = gameModelFacade.merge(model);
 
         /**
@@ -412,10 +417,13 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         gameModel1 = gameModelFacade.find(gameModel1.getId());
         gameModel2 = gameModelFacade.find(gameModel2.getId());
 
-        Assert.assertEquals(this.getStringifiedPages(model), this.getStringifiedPages(gameModel1));
-        Assert.assertEquals(this.getStringifiedPages(model), this.getStringifiedPages(gameModel2));
+        Assert.assertEquals(this.getStringifiedPages(model),
+            this.getStringifiedPages(gameModel1));
+        Assert.assertEquals(this.getStringifiedPages(model),
+            this.getStringifiedPages(gameModel2));
 
-        Assert.assertEquals(3, pageFacade.getPageIndex(model).size());
+        Assert.assertEquals(3, pageFacade.getPageIndex(model).getRoot()
+            .getItems().size());
     }
 
     @Test
@@ -601,8 +609,8 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         logger.debug(Helper.printGameModel(gameModelFacade.find(gameModel2.getId())));
 
         logger.info("anOtherNumberHistory : {} {}",
-                ((NumberDescriptor) getDescriptor(gameModel1, "anOtherNumber")).getDefaultInstance().getHistory(),
-                ((NumberDescriptor) getDescriptor(gameModel2, "anOtherNumber")).getDefaultInstance().getHistory());
+            ((NumberDescriptor) getDescriptor(gameModel1, "anOtherNumber")).getDefaultInstance().getHistory(),
+            ((NumberDescriptor) getDescriptor(gameModel2, "anOtherNumber")).getDefaultInstance().getHistory());
 
         ObjectDescriptor om1 = (ObjectDescriptor) getDescriptor(model, "aSet");
         om1.setProperty("prop1", "value1.0");
@@ -674,8 +682,8 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         logger.debug(Helper.printGameModel(gameModelFacade.find(gameModel2.getId())));
 
         logger.info("aNumberHistory : {} {}",
-                ((NumberDescriptor) getDescriptor(gameModel1, "aNumber")).getDefaultInstance().getHistory(),
-                ((NumberDescriptor) getDescriptor(gameModel2, "aNumber")).getDefaultInstance().getHistory());
+            ((NumberDescriptor) getDescriptor(gameModel1, "aNumber")).getDefaultInstance().getHistory(),
+            ((NumberDescriptor) getDescriptor(gameModel2, "aNumber")).getDefaultInstance().getHistory());
 
         List<EnumItem> allowedValues1 = ((StringDescriptor) getDescriptor(gameModel1, "aString")).getAllowedValues();
         List<EnumItem> allowedValues2 = ((StringDescriptor) getDescriptor(gameModel2, "aString")).getAllowedValues();
@@ -711,7 +719,7 @@ public class ModelFacadeTest extends AbstractArquillianTest {
 
         assertListEquals(((NumberDescriptor) getDescriptor(gameModel2, "aNumber")).getDefaultInstance().getHistory(), 1.1, 1.2, 1.3, 1.2, 1.1, 1.0);
 
-    assertListEquals(((NumberInstance) getInstance(gameModel1, "aNumber")).getHistory(), 1.1, 1.2, 1.3, 1.4, 1.3, 1.2, 1.2, 1.1, 1.0);
+        assertListEquals(((NumberInstance) getInstance(gameModel1, "aNumber")).getHistory(), 1.1, 1.2, 1.3, 1.4, 1.3, 1.2, 1.2, 1.1, 1.0);
 
         logger.info("DONE");
     }
@@ -1306,7 +1314,6 @@ public class ModelFacadeTest extends AbstractArquillianTest {
 
         /**
          * Change Y default value and move to root
-         * <p>
          */
         NumberDescriptor y1 = (NumberDescriptor) getDescriptor(model, "y");
 
@@ -1383,6 +1390,54 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         nd.getDefaultInstance().setValue(value);
 
         variableDescriptorFacade.update(nd.getId(), nd);
+    }
+
+    @Test
+    public void testItemsOrder() throws RepositoryException, WegasNoResultException, CloneNotSupportedException {
+        GameModel model = new GameModel();
+
+        model.setName("The Model");
+        model.setType(GameModel.GmType.MODEL);
+        gameModelFacade.createWithDebugGame(model);
+
+        ListDescriptor folder = wegasFactory.createList(model, model, "aFolder", "");
+        folder.setVisibility(Visibility.INHERITED);
+        variableDescriptorFacade.update(folder.getId(), folder);
+
+        NumberDescriptor third = wegasFactory.createNumberDescriptor(model, folder, "third", "third", Visibility.INHERITED, null, null, 3.0);
+
+        modelFacade.propagateModel(model.getId());
+
+        GameModel scenario = gameModelFacade.createScenarioWithDebugGame(model.getId());
+
+        ListDescriptor folder_gm1 = (ListDescriptor) scenario.getChildVariableDescriptors().get(0);
+        folder_gm1.getItems();
+
+        Assert.assertEquals(1, folder_gm1.getItems().size());
+
+        NumberDescriptor second = wegasFactory.createNumberDescriptor(model, folder, "second", "second", Visibility.INHERITED, null, null, 2.0);
+        NumberDescriptor first = wegasFactory.createNumberDescriptor(model, folder, "first", "first", Visibility.INHERITED, null, null, 1.0);
+
+        variableDescriptorFacade.move(second.getId(), folder.getId(), 0);
+        variableDescriptorFacade.move(first.getId(), folder.getId(), 0);
+
+        modelFacade.propagateModel(model.getId());
+
+        folder_gm1 = (ListDescriptor) variableDescriptorFacade.find(folder_gm1.getId());
+        Assert.assertEquals(3, folder_gm1.getItems().size());
+
+        Assert.assertEquals("first", folder_gm1.getItems().get(0).getName());
+        Assert.assertEquals("second", folder_gm1.getItems().get(1).getName());
+        Assert.assertEquals("third", folder_gm1.getItems().get(2).getName());
+
+        jpaCacheHelper.clearCacheLocal();
+
+        folder_gm1 = (ListDescriptor) variableDescriptorFacade.find(folder_gm1.getId());
+        Assert.assertEquals(3, folder_gm1.getItems().size());
+
+        Assert.assertEquals("first", folder_gm1.getItems().get(0).getName());
+        Assert.assertEquals("second", folder_gm1.getItems().get(1).getName());
+        Assert.assertEquals("third", folder_gm1.getItems().get(2).getName());
     }
 
     @Test
@@ -1562,10 +1617,10 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         ls.visitGameModelFiles(gameModel2);
 
         Assert.assertArrayEquals(update,
-                jcrFacade.getFileBytes(gameModel1.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
+            jcrFacade.getFileBytes(gameModel1.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
 
         Assert.assertArrayEquals(update,
-                jcrFacade.getFileBytes(gameModel2.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
+            jcrFacade.getFileBytes(gameModel2.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
 
         logger.info("update gm1 /dir/1/binFile1 to -1 -2 -3 2 10");
         byte[] update1 = {-1, -2, -3, 2, 10};
@@ -1582,10 +1637,10 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         ls.visitGameModelFiles(gameModel2);
 
         Assert.assertArrayEquals(update1,
-                jcrFacade.getFileBytes(gameModel1.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
+            jcrFacade.getFileBytes(gameModel1.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
 
         Assert.assertArrayEquals(update,
-                jcrFacade.getFileBytes(gameModel2.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
+            jcrFacade.getFileBytes(gameModel2.getId(), ContentConnector.WorkspaceType.FILES, "/dir1/binFile1"));
 
     }
 
@@ -1595,19 +1650,19 @@ public class ModelFacadeTest extends AbstractArquillianTest {
 
     private void assertStringValueEquals(GameModel gm1, GameModel gm2, String variable) {
         this.assertTranslatableEquals(
-                ((StringInstance) getDescriptor(gm1, variable).getDefaultInstance()).getTrValue(),
-                ((StringInstance) getDescriptor(gm2, variable).getDefaultInstance()).getTrValue());
+            ((StringInstance) getDescriptor(gm1, variable).getDefaultInstance()).getTrValue(),
+            ((StringInstance) getDescriptor(gm2, variable).getDefaultInstance()).getTrValue());
     }
 
     private void testLabel(GameModel gm1, GameModel gm2, String variable, String lang, boolean equals) {
         this.assertTranslation(getDescriptor(gm1, variable).getLabel(),
-                getDescriptor(gm2, variable).getLabel(),
-                lang, equals);
+            getDescriptor(gm2, variable).getLabel(),
+            lang, equals);
     }
 
     private void testStringValue(GameModel gm1, GameModel gm2, String variable, String lang, boolean equals) {
         this.assertTranslation(((StringInstance) getDescriptor(gm1, variable).getDefaultInstance()).getTrValue(),
-                ((StringInstance) getDescriptor(gm2, variable).getDefaultInstance()).getTrValue(), lang, equals);
+            ((StringInstance) getDescriptor(gm2, variable).getDefaultInstance()).getTrValue(), lang, equals);
     }
 
     @Test(expected = WegasErrorMessage.class)
@@ -1656,7 +1711,6 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         gameModel1 = gameModelFacade.find(gameModel1.getId());
         gameModel2 = gameModelFacade.find(gameModel2.getId());
 
-
         wegasFactory.createString(gameModel1, null, "str", "a string", "a value");
         wegasFactory.createString(gameModel2, null, "str", "a string", "a value");
 
@@ -1683,7 +1737,6 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         scenarios.add(gameModel3);
         modelFacade.integrateScenario(model, scenarios);
     }
-
 
     @Test
     public void testModelise_Languages() throws RepositoryException, IOException, IOException, WegasNoResultException {
@@ -1823,9 +1876,8 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         testStringValue(model, gameModel3, "strInherited", "en", false);
 
         /**
-         * create german in the model
-         *  * * * * * * * * * * * * * *
-         * Will be propagated to all implementations
+         * create german in the model * * * * * * * * * * * * * * Will be propagated to all
+         * implementations
          */
         i18nFacade.createLanguage(model.getId(), "de", "Deutsch");
 
@@ -1877,7 +1929,6 @@ public class ModelFacadeTest extends AbstractArquillianTest {
         //i18nFacade.printTranslations(gameModel1.getId(), "en", "fr", "de");
         //i18nFacade.printTranslations(gameModel2.getId(), "en", "fr", "de");
         //i18nFacade.printTranslations(gameModel3.getId(), "en", "fr", "de");
-
         Assert.assertNotNull("German is missing in model", model.getLanguageByCode("de"));
         Assert.assertNotNull("German is missing in gameModel1", gameModel1.getLanguageByCode("de"));
         Assert.assertNotNull("German is missing in gameModel3", gameModel3.getLanguageByCode("de"));

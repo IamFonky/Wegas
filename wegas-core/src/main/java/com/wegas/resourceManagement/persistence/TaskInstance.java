@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.resourceManagement.persistence;
@@ -20,8 +20,9 @@ import com.wegas.core.persistence.variable.VariableInstance;
 import com.wegas.editor.ValueGenerators.EmptyArray;
 import com.wegas.editor.ValueGenerators.EmptyMap;
 import com.wegas.editor.ValueGenerators.True;
-import com.wegas.editor.View.ArrayView;
-import com.wegas.editor.View.Hidden;
+import com.wegas.editor.view.ArrayView;
+import com.wegas.editor.view.HashListView;
+import com.wegas.editor.view.Hidden;
 import com.wegas.resourceManagement.ejb.IterationFacade;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -93,7 +94,7 @@ public class TaskInstance extends VariableInstance implements Propertable {
     @JsonIgnore
     @WegasEntityProperty(
         optional = false, nullable = false, proposal = EmptyMap.class,
-        view = @View(label = "Instance properties"))
+        view = @View(label = "Instance properties", value = HashListView.class))
     private List<VariableProperty> properties = new ArrayList<>();
     /**
      *
@@ -320,9 +321,9 @@ public class TaskInstance extends VariableInstance implements Propertable {
         IterationFacade iteF = beans.getIterationFacade();
 
         for (Iteration iteration : this.getIterations()) {
-            iteration = iteF.find(iteration.getId());
-            if (iteration != null) {
-                iteration.removeTask(this);
+            Iteration find = iteF.find(iteration.getId());
+            if (find != null) {
+                find.removeTask(this);
             }
         }
         this.setIterations(new ArrayList<>());

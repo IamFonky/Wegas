@@ -1,5 +1,16 @@
+import { css } from 'emotion';
 import * as React from 'react';
-import { themeVar } from '../../Components/Theme';
+import { themeVar } from '../../Components/Style/ThemeVars';
+
+const messageStyle = (color?: string) =>
+  css({
+    color,
+    padding: '5px',
+    whiteSpace: 'pre-wrap',
+    fontSize: '0.9em',
+    lineHeight: '0.9em',
+    margin: 'auto',
+  });
 
 export const messageStringStyles = [
   'normal',
@@ -33,17 +44,17 @@ interface MessageStringProps {
 function colorByType(type?: MessageStringStyle) {
   switch (type) {
     case 'succes': {
-      return themeVar.successColor;
+      return themeVar.Common.colors.SuccessColor;
     }
     case 'warning': {
-      return themeVar.warningColor;
+      return themeVar.Common.colors.WarningColor;
     }
     case 'error': {
-      return themeVar.errorColor;
+      return themeVar.Common.colors.ErrorColor;
     }
     case 'normal':
     default: {
-      return themeVar.primaryLighterColor;
+      return themeVar.Common.colors.DarkTextColor;
     }
   }
 }
@@ -76,14 +87,6 @@ export function MessageString({
   const color = colorByType(type);
 
   return (
-    <div
-      style={{
-        color: color,
-        padding: '5px',
-        whiteSpace: 'pre-wrap',
-      }}
-    >
-      {text !== undefined ? text : ''}
-    </div>
+    <div className={messageStyle(color)}>{text !== undefined ? text : ''}</div>
   );
 }

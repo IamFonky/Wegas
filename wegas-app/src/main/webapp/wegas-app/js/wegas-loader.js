@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /**
@@ -218,7 +218,7 @@ YUI().use(function(Y) {
             },
             "wegas-surveylistener": {
                 path: "js/plugin/wegas-surveylistener-min.js",
-                ws_provides: "SurveyListener",
+                ws_provides: "SurveyListener"
             },
             "wegas-resizelistener": {
                 path: "js/plugin/wegas-resizelistener-min.js",
@@ -254,6 +254,14 @@ YUI().use(function(Y) {
             "wegas-langselector": {
                 path: "js/widget/wegas-langselector-min.js",
                 ws_provides: "LangSelector"
+            },
+            "wegas-file-uploadercss": {
+                type: CSS
+            },
+            "wegas-file-uploader": {
+                path: "js/widget/wegas-file-uploader-min.js",
+                ws_provides: ["FileUploader"],
+                requires: ["wegas-file-uploadercss"]
             },
             "wegas-text-inputcss": {
                 type: CSS
@@ -472,11 +480,24 @@ YUI().use(function(Y) {
                 type: CSS
             },
             "wegas-showoverlayonclick": {
-                path: "js/plugin/wegas-showoverlayonclick-min.js",
+            path: "js/plugin/wegas-showoverlayonclick-min.js",
                 requires: ["overlay", "wegas-showoverlayonclickcss"],
                 ws_provides: ["ShowOverlayOnClick", "ShowInboxListOnClick"]
             },
+            "wegas-toggle-on-click": {
+                path: "js/plugin/wegas-toggle-on-click-min.js",
+                ws_provides: ["ToggleOnClick", "ToggleOnScript"]
+            },
             "wegas-chartistcss": {
+                type: CSS
+            },
+            "wegas-spreadsheet": {
+                path: "js/widget/wegas-spreadsheet-min.js",
+                requires: ["wegas-spreadsheetcss", "wegas-panel",
+                    "wegas-i18n-global", "wegas-button"],
+                ws_provides: "Spreadsheet"
+            },
+            "wegas-spreadsheetcss": {
                 type: CSS
             }
         }
@@ -766,7 +787,7 @@ YUI().use(function(Y) {
             },
             "wegas-editor-pagetreeview": {
                 path: "js/widget/wegas-editor-pagetreeview-min.js",
-                ws_provides: ["PageTreeview", "UneditablePageDisabler"]
+                ws_provides: ["PageTreeview", "UneditablePageDisabler", "AddPageIndexIdemButton"]
             },
             "wegas-scriptlibrary": {
                 path: "js/widget/wegas-scriptlibrary-min.js",
@@ -1036,9 +1057,12 @@ YUI().use(function(Y) {
             "wegas-survey-css": {
                 type: CSS
             },
+            "wegas-survey-orchestrator-css": {
+                type: CSS
+            },
             "wegas-survey-entities": {
                 requires: "wegas-entity",
-                ws_provides: ["SurveyDescriptor", "SurveyInstance", "SurveySectionDescriptor", 
+                ws_provides: ["SurveyDescriptor", "SurveyInstance", "SurveySectionDescriptor",
                     "SurveySectionInstance", "SurveyInputDescriptor", "SurveyInputInstance",
                     "SurveyNumberDescriptor", "SurveyTextDescriptor", "SurveyChoicesDescriptor"]
             },
@@ -1047,13 +1071,26 @@ YUI().use(function(Y) {
                     "wegas-survey-entities",
                     "wegas-i18n-survey",
                     "slider",
-                    "wegas-text-input"],
+                    "wegas-text-input",
+                    "wegas-panel",
+                    "wegas-tooltip",
+                    "wegas-injector"],
                 ws_provides: [
-                    "SurveyOrchestrator",
+                    "SurveysWidget",
                     "SurveyWidget",
                     "SurveyNumberInput",
                     "SurveyTextInput",
                     "SurveyChoicesInput"]
+            },
+            "wegas-survey-orchestrator": {
+                requires: ["wegas-survey-orchestrator-css",
+                    "wegas-survey-entities",
+                    "wegas-i18n-survey",
+                    "wegas-panel",
+                    "wegas-tooltip",
+                    "wegas-injector",
+                    "event-valuechange"],
+                ws_provides: "SurveyOrchestrator"
             },
             "wegas-i18n-survey-de": {
                 path: 'js/i18n/i18n-survey-de-min.js'
@@ -1194,6 +1231,7 @@ YUI().use(function(Y) {
                 path: "escodegen/escodegen-min.js"
             },
             tinymce: {
+                async: false,
                 path: "tinymce/tinymce.min.js"
                     //fullpath: "//unpkg.com/tinymce@4.9.5/tinymce.js"
             },
@@ -1215,8 +1253,10 @@ YUI().use(function(Y) {
                 fullpath: "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
             },
             "font-awesome": {
+                // https://fontawesome.com/v4.7.0/
                 type: CSS,
-                fullpath: "//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css"
+                path: "font-awesome/4.7.0/css/font-awesome-min.css"
+                //fullpath: "//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css"
             },
             "roboto-font": {
                 type: CSS,

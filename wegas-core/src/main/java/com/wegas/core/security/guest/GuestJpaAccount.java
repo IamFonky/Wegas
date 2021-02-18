@@ -1,14 +1,15 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.security.guest;
 
 import com.wegas.core.security.persistence.AbstractAccount;
-import javax.persistence.*;
+import com.wegas.core.security.util.AuthenticationMethod;
+import javax.persistence.Entity;
 
 /**
  * Simple class that represents any User domain entity in any application.
@@ -31,5 +32,10 @@ public class GuestJpaAccount extends AbstractAccount {
     @Override
     public Boolean isVerified() {
         return false;
+    }
+
+    @Override
+    public AuthenticationMethod getAuthenticationMethod() {
+        return null;
     }
 }

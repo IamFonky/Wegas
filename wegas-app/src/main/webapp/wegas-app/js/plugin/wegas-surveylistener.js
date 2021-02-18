@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2020  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2020  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /**
@@ -13,6 +13,11 @@ YUI.add('wegas-surveylistener', function(Y) {
     "use strict";
 
     var SurveyListener, Plugin = Y.Plugin,
+        SURVEY_BODY_CLASS = "wegas-surveymode",
+        SURVEY_PAGELOADER_CLASS = "wegas-survey-ontop",
+        SURVEY_OVERLAY_CLASS = "wegas-survey-overlay",
+        SURVEY_PANEL_CLASS = "wegas-survey-panel",
+        SURVEY_PANEL_MASK_CLASS = "wegas-survey-panel-mask",
         // In increasing order of progress, status of a given survey:
         ORCHESTRATION_PROGRESS = {
             NOT_STARTED: "NOT_STARTED",
@@ -38,6 +43,8 @@ YUI.add('wegas-surveylistener', function(Y) {
                 this.registerSurvey, this);
             // Once host app is rendered, check if we should display a survey:
             this.afterHostEvent("render", this.checkSurveys);
+            // This is for the Preview pane:
+            Y.SurveyListenerSingleton = this;
         },
         onUpdatedDescriptor: function(e) {
             var entity = e.entity;
@@ -56,14 +63,17 @@ YUI.add('wegas-surveylistener', function(Y) {
         checkSurveys: function() {
             if (!this.currentSurvey) {
                 for (var id in this.knownSurveyHandlers) {
-                    var inst = Y.Wegas.Facade.Variable.cache.findById(id).getInstance(),
-                        status = inst.get("status");
-                    if (inst.get("active") &&
-                        status === ORCHESTRATION_PROGRESS.REQUESTED ||
-                        status === ORCHESTRATION_PROGRESS.ONGOING ||
-                        status === ORCHESTRATION_PROGRESS.COMPLETED) {
-                        this.showSurvey(inst);
-                        return;
+                    var descr = Y.Wegas.Facade.Variable.cache.findById(id);
+                    if (descr) {
+                        var inst = descr.getInstance(),
+                            status = inst.get("status");
+                        if (inst.get("active") &&
+                            status === ORCHESTRATION_PROGRESS.REQUESTED ||
+                            status === ORCHESTRATION_PROGRESS.ONGOING ||
+                            status === ORCHESTRATION_PROGRESS.COMPLETED) {
+                            this.showSurvey(inst);
+                            return;
+                        }
                     }
                 }
             }
@@ -72,20 +82,22 @@ YUI.add('wegas-surveylistener', function(Y) {
         // Register a survey descriptor in order to monitor updates to its instance
         registerSurvey: function(sd) {
             var descrId = sd.get("id"),
-                instId = sd.getInstance().get("id");
+                inst = sd.getInstance();
             if (this.knownSurveyHandlers[descrId]) {
                 // Updates for an already known descriptor:
                 this.knownSurveyHandlers[descrId].detach();
             }
-            this.knownSurveyHandlers[descrId] = 
-                Y.Wegas.Facade.Instance.after(instId + ":updatedInstance", this.onUpdatedInstance, this);
+            if (inst) {
+                this.knownSurveyHandlers[descrId] = 
+                    Y.Wegas.Facade.Instance.after(inst.get("id") + ":updatedInstance", this.onUpdatedInstance, this);
+            }
         },
 
         deregisterSurvey: function(sd) {
-            var descrId = sd.get("id"),
-                instId = sd.getInstance().get("id");
-            if (this.currentSurvey && this.currentSurvey.get("id") === instId) {
+            var descrId = sd.get("id");
+            if (this.currentSurvey && this.currentSurvey.get("parentId") === descrId) {
                 this.retireSurvey();
+                this.checkSurveys();
             }
             if (this.knownSurveyHandlers[descrId]) {
                 this.knownSurveyHandlers[descrId].detach();
@@ -93,6 +105,26 @@ YUI.add('wegas-surveylistener', function(Y) {
             }
         },
 
+        // Sets a survey as the exclusive one (for the survey editor)
+        // by deregistering all other surveys and preventing new registrations.
+        discardOtherSurveys: function(sd) {
+            var descrId = sd.get("id");
+            // Make sure the given survey is registered:
+            if (!this.knownSurveyHandlers[descrId]) {
+                this.registerSurvey(sd);
+            }
+            // Prevent registration of any new surveys:
+            this.onUpdatedDescriptor = function(){};
+            // Deregister all other surveys:
+            for (var id in this.knownSurveyHandlers){
+                if (+id !== descrId) {
+                    var descr = Y.Wegas.Facade.Variable.cache.findById(id);
+                    this.deregisterSurvey(descr);
+                }
+            }
+            this.checkSurveys();
+        },
+        
         onUpdatedInstance: function(e) {
             var entity = e.entity,
                 status = entity.get("status");
@@ -103,8 +135,6 @@ YUI.add('wegas-surveylistener', function(Y) {
                 }
             } else if (status === ORCHESTRATION_PROGRESS.REQUESTED) {
                 this.showSurvey(entity);
-            } else {
-                // do nothing
             }
         },
         
@@ -122,8 +152,14 @@ YUI.add('wegas-surveylistener', function(Y) {
         // Removes the current survey from the screen.
         retireSurvey: function() {
             if (this.currentSurvey) {
-                var container = Y.one(".wegas-playerview .wegas-pageloader-content").removeClass("wegas-survey-ontop");
-                container.one(".wegas-survey-overlay").remove(true);
+                var container = Y.one(".wegas-playerview .wegas-pageloader-content");
+                if (container) {
+                    container.removeClass(SURVEY_PAGELOADER_CLASS);
+                    container.all('.' + SURVEY_OVERLAY_CLASS).remove(true);
+                }
+                Y.one("body").removeClass(SURVEY_BODY_CLASS);
+                Y.all('.' + SURVEY_PANEL_CLASS).remove(true);
+                Y.all('.' + SURVEY_PANEL_MASK_CLASS).remove(true);
                 this.currentSurvey = null;
                 if (this.currentWidget && !this.currentWidget.get("destroyed")) {
                     this.currentWidget.destroy();
@@ -132,24 +168,34 @@ YUI.add('wegas-surveylistener', function(Y) {
             }
         },
         
-        // Displays the given survey which has been "requested"
+        // Displays the given survey which has been "requested".
         showSurvey: function(inst) {
-            var ctx = this;
+            var ctx = this,
+                container = Y.one(".wegas-playerview .wegas-pageloader-content");
+            if (!container) {
+                // We are not in a playerview: should we call destructor?
+                return;
+            }
             Y.use(["wegas-survey-widgets", "wegas-popuplistener"], function(Y) {
                 if (ctx.currentSurvey) {
-                    // Ignore this survey, since there's already another one being displayed.
-                    Y.log("Survey request ignored, another one is already active");
-                    return;
+                    if (ctx.currentSurvey.get("id") === inst.get("id")) {
+                        // The survey has been reset, restart the widget:
+                        ctx.retireSurvey();
+                    } else {
+                        Y.log("Survey request ignored, another one is already active");
+                        return;
+                    }
                 }
                 var status = inst.get("status");
                 if (inst.get("active") &&
                     status !== ORCHESTRATION_PROGRESS.NOT_STARTED &&
                     status !== ORCHESTRATION_PROGRESS.CLOSED) {
                     ctx.currentSurvey = inst;
-                    var cfg, container, wrapper;
-                    container = Y.one(".wegas-playerview .wegas-pageloader-content").addClass("wegas-survey-ontop");
-                    container.insert('<div class="wegas-survey-overlay wegas-survey-page"></div>', 0);
-                    wrapper = container.one(".wegas-survey-overlay");
+                    var cfg, wrapper;
+                    Y.one("body").addClass(SURVEY_BODY_CLASS);
+                    container.addClass(SURVEY_PAGELOADER_CLASS);
+                    container.insert('<div class="' + SURVEY_OVERLAY_CLASS + '"></div>', 0);
+                    wrapper = container.one('.' + SURVEY_OVERLAY_CLASS);
                     cfg = {
                         survey: {
                                 "@class": "Script",
@@ -159,7 +205,7 @@ YUI.add('wegas-surveylistener', function(Y) {
                         oneQuestionPerPage: true
                     };
                     ctx.currentWidget = new Y.Wegas.SurveyWidget(cfg).render(wrapper);
-                    // For displaying error messages in the survey:
+                    // For displaying pop-up messages in the survey:
                     ctx.currentWidget.plug(Plugin.PopupListener);
                 }
             });

@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.persistence.variable.statemachine;
@@ -18,17 +18,33 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonView;
 import com.wegas.core.persistence.AbstractEntity;
+import com.wegas.core.persistence.Broadcastable;
 import com.wegas.core.persistence.WithPermission;
 import com.wegas.core.persistence.game.Script;
 import com.wegas.core.rest.util.Views;
 import com.wegas.core.security.util.WegasPermission;
 import com.wegas.editor.ValueGenerators.EmptyScript;
 import com.wegas.editor.ValueGenerators.Zero;
-import com.wegas.editor.View.Hidden;
-import com.wegas.editor.View.NumberView;
-import com.wegas.editor.View.ScriptView;
+import com.wegas.editor.view.Hidden;
+import com.wegas.editor.view.NumberView;
+import com.wegas.editor.view.ScriptView;
 import java.util.Collection;
-import javax.persistence.*;
+import java.util.List;
+import java.util.Map;
+import javax.persistence.Access;
+import javax.persistence.AccessType;
+import javax.persistence.AttributeOverride;
+import javax.persistence.AttributeOverrides;
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.Index;
+import javax.persistence.ManyToOne;
+import javax.persistence.Table;
+import javax.persistence.Version;
 
 /**
  * @author Cyril Junod (cyril.junod at gmail.com)
@@ -40,14 +56,14 @@ import javax.persistence.*;
     @JsonSubTypes.Type(name = "DialogueTransition", value = DialogueTransition.class)
 })
 @Table(
-        name = "transition",
-        indexes = {
-            @Index(columnList = "state_id"),
-            @Index(columnList = "actiontext_id")
-        }
+    name = "transition",
+    indexes = {
+        @Index(columnList = "state_id"),
+        @Index(columnList = "actiontext_id")
+    }
 )
 @JsonIgnoreProperties({"stateId"})
-public abstract class AbstractTransition extends AbstractEntity {
+public abstract class AbstractTransition extends AbstractEntity implements Broadcastable {
 
     private static final long serialVersionUID = 1L;
 
@@ -62,39 +78,31 @@ public abstract class AbstractTransition extends AbstractEntity {
     @Version
     @Column(columnDefinition = "bigint default '0'::bigint")
     @WegasEntityProperty(
-            nullable = false, optional = false, proposal = Zero.class,
-            sameEntityOnly = true, view = @View(
-                    label = "Version",
-                    readOnly = true,
-                    value = NumberView.class,
-                    featureLevel = ADVANCED
-            )
+        nullable = false, optional = false, proposal = Zero.class,
+        sameEntityOnly = true, view = @View(
+            label = "Version",
+            readOnly = true,
+            value = NumberView.class,
+            featureLevel = ADVANCED
+        )
     )
     private Long version;
-
-    public Long getVersion() {
-        return version;
-    }
-
-    public void setVersion(Long version) {
-        this.version = version;
-    }
 
     /**
      *
      */
     @JsonView(Views.EditorI.class)
     @WegasEntityProperty(
-            nullable = false, optional = false, proposal = Zero.class,
-            view = @View(label = "Index", featureLevel = ADVANCED))
+        nullable = false, optional = false, proposal = Zero.class,
+        view = @View(label = "Index", featureLevel = ADVANCED))
     private Integer index = 0;
 
     /**
      *
      */
     @WegasEntityProperty(
-            nullable = false, optional = false,
-            view = @View(label = "Next State", value = Hidden.class, featureLevel = INTERNAL))
+        nullable = false, optional = false,
+        view = @View(label = "Next State", value = Hidden.class, featureLevel = INTERNAL))
     private Long nextStateId;
 
     @JsonIgnore
@@ -107,14 +115,14 @@ public abstract class AbstractTransition extends AbstractEntity {
     @Embedded
     @AttributeOverrides({
         @AttributeOverride(name = "content", column
-                = @Column(name = "onTransition_content")),
+            = @Column(name = "onTransition_content")),
         @AttributeOverride(name = "language", column
-                = @Column(name = "onTransition_language"))
+            = @Column(name = "onTransition_language"))
     })
     @JsonView(Views.EditorI.class)
     @WegasEntityProperty(
-            nullable = false, optional = false, proposal = EmptyScript.class,
-            view = @View(label = "Impact", value = ScriptView.Impact.class))
+        nullable = false, optional = false, proposal = EmptyScript.class,
+        view = @View(label = "Impact", value = ScriptView.Impact.class))
     private Script preStateImpact;
 
     /**
@@ -122,8 +130,8 @@ public abstract class AbstractTransition extends AbstractEntity {
      */
     @Embedded
     @WegasEntityProperty(
-            nullable = false, optional = false, proposal = EmptyScript.class,
-            view = @View(label = "Condition", value = ScriptView.Condition.class))
+        nullable = false, optional = false, proposal = EmptyScript.class,
+        view = @View(label = "Condition", value = ScriptView.Condition.class))
     private Script triggerCondition;
 
     @Override
@@ -155,7 +163,7 @@ public abstract class AbstractTransition extends AbstractEntity {
 
     @JsonView(Views.IndexI.class)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
-    @WegasExtraProperty(view = @View(value = Hidden.class, label=""))
+    @WegasExtraProperty(view = @View(value = Hidden.class, label = ""))
     public Long getStateMachineId() {
         return this.getState().getStateMachineId();
     }
@@ -218,6 +226,14 @@ public abstract class AbstractTransition extends AbstractEntity {
         this.touchTriggerCondition();
     }
 
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
     @Override
     public String toString() {
         return "Transition{" + "triggerCondition=" + triggerCondition + ", nextStateId=" + nextStateId + '}';
@@ -228,6 +244,11 @@ public abstract class AbstractTransition extends AbstractEntity {
         return this.getState();
     }
 
+    @Override
+    public Map<String, List<AbstractEntity>> getEntities() {
+        return this.getState().getEntities();
+    }
+    
     @Override
     public Collection<WegasPermission> getRequieredUpdatePermission() {
         // same as the state (including the translator right) see issue #1441

@@ -1,6 +1,7 @@
-import { store } from '../store';
+import { store } from '../Stores/store';
 import { isMatch } from 'lodash-es';
 import { varIsList } from '../entities';
+import { IVariableDescriptor } from 'wegas-ts-api';
 
 /**
  * Find a variableDescriptor for an id
@@ -125,6 +126,7 @@ export function flatten<
   }
   const ret: T[] = [];
   const state = store.getState();
+
   ld.itemsIds.forEach(id => {
     const descriptor = state.variableDescriptors[id];
     if (cls.length > 0) {

@@ -1,8 +1,9 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2019 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.app.jsf.controllers;
@@ -18,7 +19,7 @@ import javax.inject.Named;
 import javax.servlet.http.HttpServletRequest;
 
 /*
- * Copyright (c) AlbaSim, School of Business and Engineering of Western Switzerland
+ * Copyright (c) AlbaSim, School of Management and Engineering Vaud of Western Switzerland
  * Licensed under the MIT License
  *
  * This is a script for handling AAI login. It's expected to be invoked by HTTP POST method.
@@ -91,7 +92,11 @@ public class AaiController {
 
             String redirectTo = httpRequest.getParameter("redirect");
             if (redirectTo != null) {
-                target += "?redirect=" + redirectTo;
+                if (redirectTo.charAt(0) == '/') {
+                    target += redirectTo.substring(1);
+                } else {
+                    target += redirectTo;
+                }
             }
 
             if (proceed) {

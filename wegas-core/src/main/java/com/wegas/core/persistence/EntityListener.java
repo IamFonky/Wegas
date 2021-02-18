@@ -1,22 +1,25 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.persistence;
 
+import com.wegas.core.ejb.GameFacade;
 import com.wegas.core.ejb.RequestManager;
 import com.wegas.core.ejb.TeamFacade;
 import com.wegas.core.ejb.VariableDescriptorFacade;
 import com.wegas.core.ejb.VariableInstanceFacade;
 import com.wegas.core.exception.client.WegasErrorMessage;
+import com.wegas.core.i18n.persistence.Translation;
 import com.wegas.core.jcr.jta.JCRClient;
 import com.wegas.core.jcr.jta.JCRConnectorProvider;
 import com.wegas.core.persistence.game.GameModelContent;
 import com.wegas.core.persistence.variable.Beanjection;
 import com.wegas.core.persistence.variable.ModelScoped;
+import com.wegas.core.security.ejb.AccountFacade;
 import com.wegas.core.security.ejb.UserFacade;
 import com.wegas.mcq.ejb.QuestionDescriptorFacade;
 import com.wegas.resourceManagement.ejb.IterationFacade;
@@ -60,6 +63,9 @@ public class EntityListener {
     private UserFacade userFacade;
 
     @Inject
+    private AccountFacade accountFacade;
+
+    @Inject
     private ReviewingFacade reviewingFacade;
 
     @Inject
@@ -68,8 +74,13 @@ public class EntityListener {
     @Inject
     private TeamFacade teamFacade;
 
+    @Inject
+    private GameFacade gameFacade;
+
     private Beanjection getBeansjection() {
-        return new Beanjection(variableInstanceFacade, variableDescriptorFacade, resourceFacade, iterationFacade, reviewingFacade, userFacade, teamFacade, questionDescriptorFacade);
+        return new Beanjection(variableInstanceFacade, variableDescriptorFacade, resourceFacade,
+            iterationFacade, reviewingFacade, userFacade, accountFacade,
+            teamFacade, questionDescriptorFacade, gameFacade);
     }
 
     @PrePersist
@@ -88,7 +99,10 @@ public class EntityListener {
             Mergeable m = (Mergeable) o;
             // new entities in a protected gameModel and an INTERNAL visibility scope is prohibited
             if (m.belongsToProtectedGameModel() && m.getInheritedVisibility() == ModelScoped.Visibility.INTERNAL) {
-                throw WegasErrorMessage.error("Not authorized to create " + o);
+                // but creating translation is allowed
+                if (o instanceof Translation == false) {
+                    throw WegasErrorMessage.error("Not authorized to create " + o);
+                }
             }
         }
 
@@ -143,7 +157,7 @@ public class EntityListener {
             }
         }
 
-        if (o instanceof AbstractEntity){
+        if (o instanceof AbstractEntity) {
             AbstractEntity ae = (AbstractEntity) o;
             requestManager.addDestroyedEntity(ae);
             ae.updateCacheOnDelete(getBeansjection());

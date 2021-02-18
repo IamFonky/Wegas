@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.utils;
@@ -19,6 +19,8 @@ import com.wegas.core.security.persistence.AccountDetails;
 import com.wegas.core.security.persistence.Role;
 import com.wegas.core.security.persistence.User;
 import com.wegas.core.security.util.AuthenticationInformation;
+import com.wegas.core.security.util.AuthenticationMethod;
+import com.wegas.core.security.util.JpaAuthentication;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -81,11 +83,25 @@ public class WegasRESTClient {
     }
 
     public TestAuthenticationInformation signup(String email, String password) throws IOException {
+        AuthenticationMethod authMethod = getDefaultAuthenticationMethod();
+
+        String effectivePassword;
+        String salt = null;
+
+        if (authMethod instanceof JpaAuthentication) {
+            JpaAuthentication authM = (JpaAuthentication) authMethod;
+            salt = authM.getSalt();
+            effectivePassword = authM.getMandatoryMethod().hash(password, authM.getSalt());
+        } else {
+            effectivePassword = password;
+        }
+
         JpaAccount ja = new JpaAccount();
         ja.setUsername(email);
         ja.setFirstname(email);
         ja.setLastname(email);
-        ja.setPassword(password);
+        ja.setPassword(effectivePassword);
+        ja.setSalt(salt);
 
         ja.setDetails(new AccountDetails());
         ja.getDetails().setEmail(email);
@@ -100,29 +116,64 @@ public class WegasRESTClient {
     }
 
     public TestAuthenticationInformation getAuthInfo(String username, String password) {
+
         TestAuthenticationInformation authInfo = new TestAuthenticationInformation();
         authInfo.setAgreed(Boolean.TRUE);
         authInfo.setLogin(username);
-        authInfo.setPassword(password);
+        /**
+         * always use plain text here. Hashes will be computed on TestAuthenticationInformation
+         */
+        authInfo.getHashes().add(password);
         authInfo.setRemember(true);
 
         return authInfo;
     }
 
-    public void login(AuthenticationInformation authInfo) throws IOException {
-        HttpResponse loginResponse = this._post("/rest/User/Authenticate", authInfo);
-        HttpEntity entity = loginResponse.getEntity();
-        EntityUtils.consume(entity);
+    public AuthenticationMethod getDefaultAuthenticationMethod() throws IOException {
+        return this.get("/rest/User/DefaultAuthMethod", AuthenticationMethod.class);
+    }
 
-        if (loginResponse.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
-            throw WegasErrorMessage.error("Login failed");
+    public JpaAuthentication getAuthenticationMethod(String username) throws IOException {
+        List<AuthenticationMethod> methods = this.get("/rest/User/AuthMethod/" + username, new TypeReference<List<AuthenticationMethod>>() {
+        });
+
+        for (AuthenticationMethod method : methods) {
+            if (method instanceof JpaAuthentication) {
+                return (JpaAuthentication) method;
+            }
         }
+        return null;
+    }
 
-        Header[] headers = loginResponse.getHeaders("Set-Cookie");
+    public void login(TestAuthenticationInformation authInfo) throws IOException {
+        JpaAuthentication authMethod = this.getAuthenticationMethod(authInfo.getLogin());
+        if (authMethod != null) {
+            if (cookie != null) {
+                this.logout();
+            }
 
-        if (headers.length > 0) {
-            cookie = headers[0].getValue();
+            AuthenticationInformation credentials = authInfo.instantiate(authMethod);
+            HttpResponse loginResponse = this._post("/rest/User/Authenticate", credentials);
+            HttpEntity entity = loginResponse.getEntity();
+            EntityUtils.consume(entity);
+
+            if (loginResponse.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
+                throw WegasErrorMessage.error("Login failed");
+            }
+
+            Header[] headers = loginResponse.getHeaders("Set-Cookie");
+
+            if (headers.length > 0) {
+                cookie = headers[0].getValue();
+            }
+        } else {
+            throw WegasErrorMessage.error("No authentication method");
         }
+    }
+
+    public void logout() throws IOException {
+        this.get("/rest/User/Logout");
+        this.cookie = null;
     }
 
     private void setHeaders(HttpMessage msg) {
@@ -161,7 +212,7 @@ public class WegasRESTClient {
     }
 
     public String get(String url) throws IOException {
-        logger.info("GET" + " " + url);
+        logger.info("GET" + " " + baseURL + url);
         HttpUriRequest get = new HttpGet(baseURL + url);
         setHeaders(get);
 
@@ -230,7 +281,7 @@ public class WegasRESTClient {
     }
 
     public String delete(String url) throws IOException {
-        logger.info("DELETE " + url);
+        logger.info("DELETE " + baseURL + url);
         HttpUriRequest delete = new HttpDelete(baseURL + url);
         setHeaders(delete);
 
@@ -243,7 +294,24 @@ public class WegasRESTClient {
         }
 
         return getEntityAsString(response.getEntity());
+    }
 
+    public <T> T delete(String url, Class<T> valueType) throws IOException {
+        String result = this.delete(url);
+        if (!Helper.isNullOrEmpty(result)) {
+            return getObjectMapper().readValue(result, valueType);
+        } else {
+            return null;
+        }
+    }
+
+    public <T> T delete(String url, TypeReference<T> valueType) throws IOException {
+        String result = this.delete(url);
+        if (!Helper.isNullOrEmpty(result)) {
+            return getObjectMapper().readValue(result, valueType);
+        } else {
+            return null;
+        }
     }
 
     private HttpResponse sendRequest(String url, String method, String jsonContent) throws IOException {
@@ -340,6 +408,31 @@ public class WegasRESTClient {
 
         public void setAccountId(Long accountId) {
             this.accountId = accountId;
+        }
+
+        public AuthenticationInformation instantiate(JpaAuthentication authMethod) {
+            AuthenticationInformation credentials = new AuthenticationInformation();
+
+            String plainPassword = this.getHashes().get(0);
+
+            credentials.setAgreed(this.isAgreed());
+            credentials.setLogin(this.getLogin());
+            credentials.setRemember(this.isRemember());
+
+            credentials.getHashes().add(
+                authMethod.getMandatoryMethod().hash(plainPassword,
+                    Helper.coalesce(authMethod.getSalt()))
+            );
+
+            if (authMethod.getOptionalMethod() != null) {
+                credentials.getHashes().add(
+                    authMethod.getOptionalMethod().hash(plainPassword,
+                        Helper.coalesce(authMethod.getNewSalt(), authMethod.getSalt())
+                    )
+                );
+            }
+
+            return credentials;
         }
 
     }

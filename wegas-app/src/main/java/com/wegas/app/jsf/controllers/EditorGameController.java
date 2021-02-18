@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.app.jsf.controllers;
@@ -17,9 +17,7 @@ import com.wegas.core.persistence.game.Game;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.RequestScoped;
 import javax.inject.Named;
-import javax.faces.context.FacesContext;
 import javax.inject.Inject;
-import javax.servlet.http.HttpServletRequest;
 
 /**
  *
@@ -68,7 +66,7 @@ public class EditorGameController extends AbstractGameController {
      */
     @PostConstruct
     public void init() {
-        HttpServletRequest request = (HttpServletRequest) FacesContext.getCurrentInstance().getExternalContext().getRequest();
+        //HttpServletRequest request = (HttpServletRequest) FacesContext.getCurrentInstance().getExternalContext().getRequest();
 
         if (this.playerId != null) {                                            // If a playerId is provided, we use it
             currentPlayer = playerFacade.find(this.getPlayerId());
@@ -105,10 +103,25 @@ public class EditorGameController extends AbstractGameController {
         if (currentPlayer == null) {                                            // If no player could be found, we redirect to an error page
             errorController.dispatch("Empty Team", "Team " + teamFacade.find(this.teamId).getName() + " has no player.");
         } else if (!requestManager.hasGameWriteRight(currentPlayer.getGame())
-                && !requestManager.hasGameModelTranslateRight(currentPlayer.getGameModel())) {
+                && !requestManager.hasGameModelTranslateRight(currentPlayer.getGameModel())
+                // Enable preview on games on which the user has read rights :
+                && !requestManager.hasGameModelReadRight(currentPlayer.getGameModel())) {
             errorController.accessDenied();
         }
 
+    }
+    
+    /**
+     * Checks that the current player has write rights on the game.
+     */
+    public String assertHasGameWriteRight() {
+        if (currentPlayer == null) {                                            // If no player could be found, we redirect to an error page
+            errorController.dispatch("Empty Team", "Team " + teamFacade.find(this.teamId).getName() + " has no player.");
+        } else if (!requestManager.hasGameWriteRight(currentPlayer.getGame())) {
+            errorController.accessDenied();
+        }
+        // This kind of method has to return a string:
+        return "true";
     }
 
     /**

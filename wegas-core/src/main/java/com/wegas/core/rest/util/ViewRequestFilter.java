@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.rest.util;
@@ -11,7 +11,6 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.wegas.core.ejb.RequestFacade;
 import com.wegas.core.ejb.RequestManager;
-import com.wegas.core.security.ejb.UserFacade;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -23,8 +22,6 @@ import javax.ws.rs.container.ContainerRequestFilter;
 import javax.ws.rs.container.PreMatching;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.ext.Provider;
-import org.eclipse.microprofile.metrics.Counter;
-import org.eclipse.microprofile.metrics.annotation.Metric;
 import org.glassfish.jersey.jackson.internal.jackson.jaxrs.cfg.EndpointConfigBase;
 import org.glassfish.jersey.jackson.internal.jackson.jaxrs.cfg.ObjectWriterInjector;
 import org.glassfish.jersey.jackson.internal.jackson.jaxrs.cfg.ObjectWriterModifier;
@@ -47,17 +44,10 @@ import org.slf4j.LoggerFactory;
 public class ViewRequestFilter implements ContainerRequestFilter {
 
     @Inject
-    RequestIdentifierGenerator idGenerator;
+    private RequestIdentifierGenerator idGenerator;
 
     @Inject
-    UserFacade userFacade;
-
-    @Inject
-    RequestFacade requestFacade;
-
-    @Inject
-    @Metric(name = "requests_total", description = "Total requests", absolute = true)
-    Counter requests;
+    private RequestFacade requestFacade;
 
     private final static Logger logger = LoggerFactory.getLogger(ViewRequestFilter.class);
 
@@ -72,7 +62,6 @@ public class ViewRequestFilter implements ContainerRequestFilter {
 
         requestManager.setSocketId(cr.getHeaderString("socketId"));
 
-        requests.inc();
         requestManager.setRequestId(idGenerator.getUniqueIdentifier());
         requestManager.setMethod(cr.getMethod());
         requestManager.setPath(cr.getUriInfo().getPath());
@@ -134,7 +123,7 @@ public class ViewRequestFilter implements ContainerRequestFilter {
 
     private static class JsonViewModifier extends ObjectWriterModifier {
 
-        Class<?> view;
+        private Class<?> view;
 
         public JsonViewModifier(Class<?> view) {
             this.view = view;

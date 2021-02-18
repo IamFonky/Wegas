@@ -1,82 +1,17 @@
 import { css } from 'emotion';
 import * as React from 'react';
 import { SizedDiv } from '../../../Components/SizedDiv';
-import Editor, {
-  Monaco,
-  monaco,
-  EditorProps,
-  DiffEditorDidMount,
-  EditorDidMount,
-} from '@monaco-editor/react';
-import schemas from '../../../page-schema.build';
-
-export type SrcEditorLanguages =
-  | 'javascript'
-  | 'plaintext'
-  | 'css'
-  | 'json'
-  | 'typescript';
-export type MonacoEditor = Monaco;
-export type MonacoEditorProperties = Exclude<EditorProps['options'], undefined>;
-export type MonacoLangaugesServices = MonacoEditor['languages']['typescript']['typescriptDefaults'];
-export type MonacoSCodeEditor = Parameters<EditorDidMount>[1];
-export type MonacoSDiffEditor = Parameters<DiffEditorDidMount>[2];
-export type MonacoCodeEditor = Parameters<
-  Parameters<MonacoSCodeEditor['addAction']>[0]['run']
->[0];
-export type MonacoEditorCursorEvent = Parameters<
-  Parameters<MonacoCodeEditor['onDidChangeCursorSelection']>[0]
->[0];
-export type MonacoEditorModel = Exclude<
-  ReturnType<MonacoSCodeEditor['getModel']>,
-  null
->;
-export interface MonacoEditorSimpleToken {
-  offset: number;
-  type: string;
-  language: string;
-}
-export interface MonacoDefinitionsLibraries {
-  content: string;
-  name?: string;
-}
-export interface MonacoEditorSimpleRange {
-  /**
-   * Line number on which the range starts (starts at 1).
-   */
-  startLineNumber: number;
-  /**
-   * Column on which the range starts in line `startLineNumber` (starts at 1).
-   */
-  startColumn: number;
-  /**
-   * Line number on which the range ends.
-   */
-  endLineNumber: number;
-  /**
-   * Column on which the range ends in line `endLineNumber`.
-   */
-  endColumn: number;
-}
-
-export interface SrcEditorAction {
-  /**
-   * id - An unique identifier of the contributed action.
-   */
-  id: string;
-  /**
-   * label - A label of the action that will be presented to the user.
-   */
-  label: string;
-  /**
-   * keys - An optional array of keybindings for the action.
-   */
-  keybindings?: number[];
-  /**
-   * run - the function to be fired with the action
-   */
-  run: (monaco: MonacoEditor, editor: MonacoCodeEditor) => void;
-}
+import Editor, { Monaco, monaco } from '@monaco-editor/react';
+import {
+  MonacoEditor,
+  SrcEditorLanguages,
+  MonacoDefinitionsLibraries,
+  MonacoSCodeEditor,
+  MonacoEditorProperties,
+  MonacoLangaugesServices,
+  SrcEditorAction,
+} from './editorHelpers';
+import { useJSONSchema } from './useJSONSchema';
 
 export interface SrcEditorProps {
   /**
@@ -103,7 +38,10 @@ export interface SrcEditorProps {
    * cursorOffset - the position of the cursor in the text
    */
   cursorOffset?: number;
-
+  /**
+   * timeout - the timeout before changes applies
+   */
+  timeout?: number | undefined;
   /**
    * onChange - this function is fired each time the content of the editor is changed by the user
    */
@@ -124,7 +62,7 @@ export interface SrcEditorProps {
   /**
    * defaultKeyEvents - a list of key event to be caught in the editor
    */
-  defaultActions?: SrcEditorAction[];
+  defaultActions?: (monaco: Monaco) => SrcEditorAction[];
   /**
    * defaultFocus - force editor to focus on first render
    */
@@ -153,21 +91,6 @@ const overflowHide = css({
   width: '100%',
   height: '100%',
 });
-
-/**
- * textToArray split a text into an array of lines
- *
- * @param text - the text to be splitted
- */
-export const textToArray = (text: string): string[] => text.split(/\r?\n/);
-
-/**
- * arrayToText merge an array of lines into a single string
- *
- * @param lines - the array of lines
- */
-export const arrayToText = (lines: string[]): string =>
-  lines.reduce((newString, line) => newString + line + '\n', '').slice(0, -1);
 
 export const addExtraLib = (
   service: MonacoLangaugesServices,
@@ -209,6 +132,7 @@ function SrcEditor({
   extraLibs,
   noGutter,
   defaultProperties,
+  timeout = 100,
   onEditorReady,
   onBlur,
   onChange,
@@ -221,6 +145,8 @@ function SrcEditor({
   const getValue = React.useRef<() => string>();
   const editorValue = React.useRef(value || '');
   const mounted = React.useRef<boolean>(false);
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
   React.useEffect(() => {
     mounted.current = true;
     return () => {
@@ -273,6 +199,8 @@ function SrcEditor({
   );
   /* eslint-enable */
 
+  const schema = useJSONSchema(language === 'json');
+
   React.useEffect(() => {
     if (reactMonaco) {
       if (language === 'javascript') {
@@ -302,15 +230,15 @@ function SrcEditor({
           validate: true,
           schemas: [
             {
-              fileMatch: ['page.json'],
               uri: 'internal://page-schema.json',
-              schema: (schemas as any).schema,
+              fileMatch: ['page.json'],
+              schema,
             },
           ],
         });
       }
     }
-  }, [extraLibs, language, reactMonaco, forceJS]);
+  }, [extraLibs, language, reactMonaco, forceJS, schema]);
 
   React.useEffect(() => {
     if (reactMonaco) {
@@ -349,7 +277,16 @@ function SrcEditor({
             if (newVal !== editorValue.current) {
               editorValue.current = newVal;
               if (onChange) {
-                onChange(newVal);
+                if (timeout) {
+                  if (timeoutRef.current != null) {
+                    clearTimeout(timeoutRef.current);
+                  }
+                  timeoutRef.current = setTimeout(() => {
+                    onChange(newVal);
+                  }, timeout);
+                } else {
+                  onChange(newVal);
+                }
               }
             }
           }
@@ -360,6 +297,7 @@ function SrcEditor({
     cursorOffset,
     defaultFocus,
     editor,
+    timeout,
     onBlur,
     onChange,
     onEditorReady,
@@ -380,7 +318,7 @@ function SrcEditor({
           },
         });
         if (defaultActions) {
-          defaultActions.forEach(action => {
+          defaultActions(reactMonaco).forEach(action => {
             editor.addAction({
               ...action,
               run: editor => action.run(reactMonaco, editor),

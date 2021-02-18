@@ -1,8 +1,9 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.ejb;
@@ -16,7 +17,12 @@ import com.pusher.rest.Pusher;
 import com.pusher.rest.data.PresenceUser;
 import com.pusher.rest.data.Result;
 import com.wegas.core.Helper;
-import com.wegas.core.event.client.*;
+import com.wegas.core.event.client.ClientEvent;
+import com.wegas.core.event.client.DestroyedEntity;
+import com.wegas.core.event.client.EntityDestroyedEvent;
+import com.wegas.core.event.client.EntityUpdatedEvent;
+import com.wegas.core.event.client.OutdatedEntitiesEvent;
+import com.wegas.core.exception.client.WegasAccessDenied;
 import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.persistence.AbstractEntity;
 import com.wegas.core.persistence.game.Game;
@@ -145,7 +151,7 @@ public class WebsocketFacade {
                 }
             } else if (entity instanceof Team) {
                 Team team = (Team) entity;
-                User user = userFacade.getCurrentUser();
+                userFacade.getCurrentUser();
 
                 if (requestManager.hasTeamRight(team)) {
                     channel = ((Team) entity).getChannel();
@@ -276,20 +282,22 @@ public class WebsocketFacade {
     }
 
     /**
-     * @param filter
-     * @param entityType
-     * @param entityId
      * @param data
      *
      * @return Status
      *
      * @throws IOException
      */
-    public Integer send(String filter, String entityType, String entityId, Object data) throws IOException {
+    public Integer send(String channel, String eventName, Object data) throws IOException {
         if (this.pusher == null) {
             return 400;
+        } else if (requestManager.hasChannelPermission(channel)) {
+            return pusher.trigger(channel, "CustomEvent",
+                parseJSON("{\"@class\": \"CustomEvent\", \"type\": \"" + eventName + "\", \"payload\": " + toJson(data) + "}")
+            ).getHttpStatus();
+        } else {
+            throw new WegasAccessDenied(channel, channel, null, requestManager.getCurrentUser());
         }
-        return pusher.trigger(entityType + "-" + entityId, filter, data).getHttpStatus();
     }
 
     /**
@@ -478,7 +486,7 @@ public class WebsocketFacade {
     }
 
     public void pageUpdate(Long gameModelId, String pageId, String socketId) {
-        if (pusher != null) {
+        if (pusher != null && !pageId.equals("index")) {
             GameModel gameModel = gameModelFacade.find(gameModelId);
             pusher.trigger(gameModel.getChannel(), "PageUpdate", pageId, socketId);
         }
@@ -555,10 +563,8 @@ public class WebsocketFacade {
             userInfo.put("name", user.getName());
             return pusher.authenticate(socketId, channel, new PresenceUser(user.getId(), userInfo));
         }
-        if (channel.startsWith("private")) {
-            if (requestManager.hasChannelPermission(channel)) {
-                return pusher.authenticate(socketId, channel);
-            }
+        if (channel.startsWith("private") && requestManager.hasChannelPermission(channel)) {
+            return pusher.authenticate(socketId, channel);
         }
         return null;
     }
@@ -570,10 +576,8 @@ public class WebsocketFacade {
     private Long getUserIdFromChannel(String channelName) {
         Matcher matcher = USER_CHANNEL_PATTERN.matcher(channelName);
 
-        if (matcher.matches()) {
-            if (matcher.groupCount() == 1) {
-                return Long.parseLong(matcher.group(1));
-            }
+        if (matcher.matches() && matcher.groupCount() == 1) {
+            return Long.parseLong(matcher.group(1));
         }
         return null;
     }
@@ -778,10 +782,8 @@ public class WebsocketFacade {
                 Iterator<Cache.Entry<Long, OnlineUser>> it = onlineUsers.iterator();
                 while (it.hasNext()) {
                     Cache.Entry<Long, OnlineUser> next = it.next();
-                    if (next.getKey() != null) {
-                        if (!channels.containsKey(getChannelFromUserId(next.getKey()))) {
-                            it.remove();
-                        }
+                    if (next.getKey() != null && !channels.containsKey(getChannelFromUserId(next.getKey()))) {
+                        it.remove();
                     }
                 }
 
@@ -800,7 +802,7 @@ public class WebsocketFacade {
      * Say to admin's who are currently logged in that some users connect or disconnect
      */
     private void propagateOnlineUsers() {
-        Result trigger = pusher.trigger(WebsocketFacade.ADMIN_CHANNEL, "online-users", "");
+        pusher.trigger(WebsocketFacade.ADMIN_CHANNEL, "online-users", "");
     }
 
     public void clearOnlineUsers() {
@@ -860,7 +862,7 @@ public class WebsocketFacade {
 
         @Override
         public Object process(MutableEntry<Long, OnlineUser> entry, Object... arguments) throws EntryProcessorException {
-            if (entry != null) {
+            if (entry != null && playerId != null) {
                 OnlineUser value = entry.getValue();
                 if (value != null) {
                     value.touch(playerId);

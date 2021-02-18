@@ -1,18 +1,16 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.ejb;
 
-import com.wegas.core.Helper;
 import com.wegas.core.async.PopulatorScheduler;
 import com.wegas.core.ejb.statemachine.StateMachineFacade;
 import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.exception.internal.WegasNoResultException;
-import com.wegas.core.i18n.ejb.I18nFacade;
 import com.wegas.core.persistence.game.DebugGame;
 import com.wegas.core.persistence.game.DebugTeam;
 import com.wegas.core.persistence.game.Game;
@@ -29,6 +27,9 @@ import com.wegas.core.security.ejb.UserFacade;
 import com.wegas.core.security.guest.GuestJpaAccount;
 import com.wegas.core.security.persistence.AbstractAccount;
 import com.wegas.core.security.persistence.User;
+import com.wegas.core.security.util.ActAsPlayer;
+import com.wegas.core.security.util.Sudoer;
+import com.wegas.core.security.util.WegasPermission;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -68,9 +69,6 @@ public class PlayerFacade extends BaseFacade<Player> {
     @Inject
     private GameModelFacade gameModelFacade;
 
-    @Inject
-    private I18nFacade i18nFacade;
-
     /**
      *
      */
@@ -85,6 +83,38 @@ public class PlayerFacade extends BaseFacade<Player> {
 
     @Inject
     private WebsocketFacade websocketFacade;
+
+    /**
+     *
+     * @param gameModel
+     * @param languages
+     *
+     * @return language
+     *
+     * @throws WegasErrorMessage if there is not language in the gameModel
+     */
+    public GameModelLanguage findPreferredLanguages(GameModel gameModel, List<Locale> languages) {
+        List<GameModelLanguage> gmLanguages = gameModel.getRawLanguages();
+        if (languages != null && gmLanguages != null) {
+            for (Locale locale : languages) {
+                GameModelLanguage lang = gameModel.getLanguageByCode(locale.toLanguageTag());
+                if (lang != null && lang.isActive()) {
+                    return lang;
+                } else {
+                    lang = gameModel.getLanguageByCode(locale.getLanguage());
+                    if (lang != null && lang.isActive()) {
+                        return lang;
+                    }
+                }
+            }
+        }
+
+        if (gmLanguages != null && !gmLanguages.isEmpty()) {
+            return gmLanguages.get(0);
+        } else {
+            throw new WegasErrorMessage("error", "No language");
+        }
+    }
 
     /**
      * Create a player linked to the user identified by userId(may be null) and join the team
@@ -119,33 +149,10 @@ public class PlayerFacade extends BaseFacade<Player> {
 
         Player player = new Player();
         GameModel gameModel = team.getGame().getGameModel();
-        List<GameModelLanguage> gmLanguages = gameModel.getLanguages();
 
-        String preferredLang = null;
-        if (languages != null && gmLanguages != null) {
-            for (Locale locale : languages) {
-                GameModelLanguage lang = gameModel.getLanguageByCode(locale.toLanguageTag());
-                if (lang != null && lang.isActive()) {
-                    preferredLang = lang.getCode();
-                    break;
-                } else {
-                    lang = gameModel.getLanguageByCode(locale.getLanguage());
-                    if (lang != null && lang.isActive()) {
-                        preferredLang = lang.getCode();
-                        break;
-                    }
-                }
-            }
-        }
+        GameModelLanguage preferredLang = this.findPreferredLanguages(gameModel, languages);
 
-        if (Helper.isNullOrEmpty(preferredLang)) {
-            if (gmLanguages != null && !gmLanguages.isEmpty()) {
-                preferredLang = gmLanguages.get(0).getCode();
-            } else {
-                throw new WegasErrorMessage("error", "No language");
-            }
-        }
-        player.setLang(preferredLang);
+        player.setLang(preferredLang.getCode());
 
         if (userId != null) {
             User user = userFacade.find(userId);
@@ -364,16 +371,17 @@ public class PlayerFacade extends BaseFacade<Player> {
      */
     public List<VariableInstance> getInstances(final Long playerId) {
         Player player = this.find(playerId);
-        requestManager.setPlayer(player);
-        Team team = player.getTeam();
-        Game game = team.getGame();
-        GameModel gameModel = game.getGameModel();
+        try (ActAsPlayer acting = requestManager.actAsPlayer(player)) {
+            Team team = player.getTeam();
+            Game game = team.getGame();
+            GameModel gameModel = game.getGameModel();
 
-        List<VariableInstance> instances = this.getPlayerInstances(player);
-        instances.addAll(this.getTeamInstances(team));
-        instances.addAll(this.getGameModelInstances(gameModel));
+            List<VariableInstance> instances = this.getPlayerInstances(player);
+            instances.addAll(this.getTeamInstances(team));
+            instances.addAll(this.getGameModelInstances(gameModel));
 
-        return instances;
+            return instances;
+        }
     }
 
     /**
@@ -395,18 +403,31 @@ public class PlayerFacade extends BaseFacade<Player> {
     public void remove(final Player player) {
         //List<VariableInstance> instances = this.getAssociatedInstances(player);
         Team team = teamFacade.find(player.getTeam().getId());
+        User playerUser = player.getUser();
 
-        if (team instanceof DebugTeam == false) {
-            if (team.getPlayers().size() == 1) {
-                // Last player -> remove the whole team
-                teamFacade.remove(team);
-            } else {
-                // Only remove the player
-                team.getPlayers().remove(player);
-                if (player.getUser() != null) {
-                    player.getUser().getPlayers().remove(player);
+        // remove a playes is permitted if either:
+        //   1) the player belongs to the current user (user edit permission)
+        //   2) the current user is an admin (user edit permission)
+        //   3) the current user is the trainer of the player (player.game edit right)
+        //      In this case, the user lacks the user edit right, we have to bypass it
+        //      with a sudo
+        if (team instanceof DebugTeam == false && playerUser != null) {
+            Collection<WegasPermission> perms = playerUser.getRequieredUpdatePermission();
+            perms.addAll(player.getGame().getRequieredUpdatePermission());
+
+            requestManager.assertUserHasPermission(perms, "DELETE", player);
+            try (Sudoer su = requestManager.sudoer()) {
+                if (team.getPlayers().size() == 1) {
+                    // Last player -> remove the whole team
+                    teamFacade.remove(team);
+                } else {
+                    // Only remove the player
+                    team.getPlayers().remove(player);
+                    if (player.getUser() != null) {
+                        player.getUser().getPlayers().remove(player);
+                    }
+                    this.getEntityManager().remove(player);
                 }
-                this.getEntityManager().remove(player);
             }
         }
     }
@@ -482,10 +503,8 @@ public class PlayerFacade extends BaseFacade<Player> {
      */
     private Player findDebugPlayerByGame(Game game) {
         for (Team t : game.getTeams()) {
-            if (t instanceof DebugTeam || game instanceof DebugGame) {
-                if (t.getPlayers().size() > 0) {
-                    return t.getPlayers().get(0);
-                }
+            if ((t instanceof DebugTeam || game instanceof DebugGame) && !t.getPlayers().isEmpty()) {
+                return t.getPlayers().get(0);
             }
         }
         return null;
@@ -594,10 +613,13 @@ public class PlayerFacade extends BaseFacade<Player> {
         Player p = this.find(playerId);
         if (p.getStatus() == Status.FAILED) {
             gameModelFacade.createAndRevivePrivateInstance(p.getGame().getGameModel(), p);
-            p.setStatus(Status.LIVE);
 
+            p.setStatus(Status.INITIALIZING);
             this.flush();
+
             stateMachineFacade.runStateMachines(p);
+            p.setStatus(Status.LIVE);
+            this.flush();
             websocketFacade.propagateNewPlayer(p);
         }
         return p;

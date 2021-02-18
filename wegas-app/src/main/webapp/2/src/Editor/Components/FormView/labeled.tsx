@@ -1,19 +1,14 @@
 import * as React from 'react';
 import { css } from 'emotion';
-import { featuresCTX } from '../../../Components/Contexts/FeaturesProvider';
+import {
+  featuresCTX,
+  isFeatureEnabled,
+} from '../../../Components/Contexts/FeaturesProvider';
+import { LanguageSelector } from '../../../Components/Contexts/LanguagesProvider';
+import { componentMarginLeft } from '../../../css/classes';
 
-export interface LabeledView {
-  label?: string;
-  description?: string;
-  index?: number;
-}
-interface LabeledProps extends LabeledView {
-  children: (inputProps: {
-    inputId: string;
-    labelNode: JSX.Element;
-  }) => React.ReactNode;
-}
-const titleStyle = css({
+export const titleStyle = css({
+  marginBottom: '5px',
   display: 'flex',
   '[title]': {
     display: 'inline-block',
@@ -22,6 +17,21 @@ const titleStyle = css({
     cursor: 'help',
   },
 });
+
+export interface LabeledView {
+  label?: React.ReactNode;
+  description?: string;
+  index?: number;
+  onLanguage?: (lang: string) => void;
+  currentLanguage?: string;
+}
+
+interface LabeledProps extends LabeledView {
+  children: (inputProps: {
+    inputId: string;
+    labelNode: JSX.Element;
+  }) => React.ReactNode;
+}
 let id = 0;
 
 /** Handle view's label and description  */
@@ -30,6 +40,8 @@ export const Labeled: React.FunctionComponent<LabeledProps> = ({
   children,
   description,
   index,
+  onLanguage,
+  currentLanguage,
 }: LabeledProps) => {
   const internalId = React.useRef(`__labelInput__${id++}`);
   const { currentFeatures } = React.useContext(featuresCTX);
@@ -44,9 +56,18 @@ export const Labeled: React.FunctionComponent<LabeledProps> = ({
       >
         <span style={{ display: 'inline-flex' }}>
           {label}
-          {currentFeatures.includes('ADVANCED') && index != null && (
+          {isFeatureEnabled(currentFeatures, 'INTERNAL') && index != null && (
             <span style={{ marginLeft: '1em' }}>{index}</span>
           )}
+          {onLanguage &&
+            (isFeatureEnabled(currentFeatures, 'ADVANCED') ? (
+              <LanguageSelector
+                onSelect={item => onLanguage(item.value.code)}
+                className={componentMarginLeft}
+              />
+            ) : (
+              `[${currentLanguage}]`
+            ))}
         </span>
       </label>
     ),

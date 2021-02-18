@@ -1,8 +1,8 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.mcq.ejb;
@@ -26,6 +26,7 @@ import com.wegas.mcq.persistence.QuestionInstance;
 import com.wegas.mcq.persistence.Reply;
 import com.wegas.mcq.persistence.Result;
 import com.wegas.test.arquillian.AbstractArquillianTest;
+import java.util.List;
 import javax.inject.Inject;
 import javax.naming.NamingException;
 import org.junit.Assert;
@@ -273,7 +274,7 @@ public class QuestionDescriptorFacadeTest extends AbstractArquillianTest {
 
         Result r2 = wegasFactory.createResult("result1");
         r2.setIgnorationImpact(new Script("Variable.find(gameModel, \"mynumber2\").setValue(self, 50);"));
-        ChoiceDescriptor choice2 = createChoice(question, "testChoice2", null, "result1", r2);
+        createChoice(question, "testChoice2", null, "result1", r2);
 
         login(user);
         questionDescriptorFacade.selectChoice(choice1.getId(), player.getId());
@@ -452,7 +453,7 @@ public class QuestionDescriptorFacadeTest extends AbstractArquillianTest {
 
         // And the default reply is the second
         choice = (ChoiceDescriptor) variableDescriptorFacade.find(choice.getId());
-        Result r = choice.getResultByName("result");
+        choice.getResultByName("result");
         Result r2 = choice.getResultByName("result_2");
 
         // Set the default reply to the second one
@@ -492,7 +493,9 @@ public class QuestionDescriptorFacadeTest extends AbstractArquillianTest {
                 wegasFactory.createResult("result"),
                 wegasFactory.createResult("result_2"));
 
-        choice.getResults().remove(0);
+        List<Result> results = choice.getResults();
+        results.remove(0);
+        choice.setResults(results);
         variableDescriptorFacade.update(choice.getId(), choice);
 
         assertEquals("result_2", ((ChoiceDescriptor) variableDescriptorFacade.find(choice.getId())).getResults().get(0).getName());
@@ -564,13 +567,6 @@ public class QuestionDescriptorFacadeTest extends AbstractArquillianTest {
 
         assertEquals("result_1", ((ChoiceDescriptor) variableDescriptorFacade.find(choice.getId())).getResults().get(0).getName());
         variableDescriptorFacade.remove(question.getId());
-    }
-
-    private void printChildren(String title, DescriptorListI list) {
-        logger.error(title + ":");
-        for (Object child : list.getItems()) {
-            logger.error(" - " + child);
-        }
     }
 
     @Test

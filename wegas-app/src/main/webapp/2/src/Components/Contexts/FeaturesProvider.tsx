@@ -1,12 +1,32 @@
 import * as React from 'react';
-import { Menu } from '../Menu';
+import { DropMenu } from '../DropMenu';
 
 const availableFeatures: FeatureLevel[] = ['ADVANCED', 'INTERNAL'];
-export const featuresCTX = React.createContext<{
+
+export const defaultFeatures: FeaturesSelecta = {
+  DEFAULT: true,
+  ADVANCED: false,
+  INTERNAL: false,
+};
+
+export interface FeatureContext {
   currentFeatures: FeatureLevel[];
   setFeature: (feature: FeatureLevel) => void;
   removeFeature: (feature: FeatureLevel) => void;
-}>({ currentFeatures: [], setFeature: () => {}, removeFeature: () => {} });
+}
+
+export const featuresCTX = React.createContext<FeatureContext>({
+  currentFeatures: [],
+  setFeature: () => {},
+  removeFeature: () => {},
+});
+
+export function isFeatureEnabled(
+  currentFeatures: FeatureLevel[],
+  feature: FeatureLevel,
+) {
+  return currentFeatures.includes(feature);
+}
 
 function FeaturesContext({ children }: React.PropsWithChildren<{}>) {
   const [features, setFeature] = React.useState<FeatureLevel[]>(['DEFAULT']);
@@ -34,14 +54,14 @@ export const FeaturesProvider = React.memo(FeaturesContext);
 /**
  * Features selector allows to select features inside the feature context given by the FeatureProvider
  */
-export function FeatureToggler() {
+export function FeatureToggler({ className, style }: ClassStyleId) {
   const { currentFeatures, setFeature, removeFeature } = React.useContext(
     featuresCTX,
   );
 
   const selectFeature = React.useCallback(
     (feature: FeatureLevel) => {
-      if (currentFeatures.includes(feature)) {
+      if (isFeatureEnabled(currentFeatures, feature)) {
         removeFeature(feature);
       } else {
         setFeature(feature);
@@ -52,15 +72,15 @@ export function FeatureToggler() {
 
   return React.useMemo(
     () => (
-      <Menu
+      <DropMenu
         label={'Features'}
         items={availableFeatures.map(feature => ({
-          id: feature,
+          value: feature,
           label: (
             <>
               <input
                 type="checkbox"
-                defaultChecked={currentFeatures.includes(feature)}
+                defaultChecked={isFeatureEnabled(currentFeatures, feature)}
                 onChange={() => selectFeature(feature)}
                 onClick={e => e.stopPropagation()}
               />
@@ -68,9 +88,11 @@ export function FeatureToggler() {
             </>
           ),
         }))}
-        onSelect={({ id: feature }) => selectFeature(feature)}
+        onSelect={({ value: feature }) => selectFeature(feature)}
+        containerClassName={className}
+        style={style}
       />
     ),
-    [currentFeatures, selectFeature],
+    [currentFeatures, selectFeature, className, style],
   );
 }

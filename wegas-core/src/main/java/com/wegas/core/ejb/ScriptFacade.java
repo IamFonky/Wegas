@@ -1,15 +1,26 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.ejb;
 
 import com.wegas.core.Delay;
 import com.wegas.core.Helper;
-import com.wegas.core.api.*;
+import com.wegas.core.api.DelayedScriptEventFacadeI;
+import com.wegas.core.api.GameModelFacadeI;
+import com.wegas.core.api.I18nFacadeI;
+import com.wegas.core.api.IterationFacadeI;
+import com.wegas.core.api.QuestionDescriptorFacadeI;
+import com.wegas.core.api.RequestManagerI;
+import com.wegas.core.api.ResourceFacadeI;
+import com.wegas.core.api.ReviewingFacadeI;
+import com.wegas.core.api.ScriptEventFacadeI;
+import com.wegas.core.api.StateMachineFacadeI;
+import com.wegas.core.api.VariableDescriptorFacadeI;
+import com.wegas.core.api.VariableInstanceFacadeI;
 import com.wegas.core.ejb.nashorn.JSTool;
 import com.wegas.core.ejb.nashorn.JavaObjectInvocationHandler;
 import com.wegas.core.ejb.nashorn.NHClassFilter;
@@ -20,26 +31,34 @@ import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.exception.client.WegasRuntimeException;
 import com.wegas.core.exception.client.WegasScriptException;
 import com.wegas.core.i18n.ejb.I18nFacade;
-import com.wegas.core.persistence.AbstractEntity;
-import com.wegas.core.persistence.game.*;
+import com.wegas.core.persistence.game.GameModel;
+import com.wegas.core.persistence.game.GameModelContent;
+import com.wegas.core.persistence.game.Player;
+import com.wegas.core.persistence.game.Populatable;
+import com.wegas.core.persistence.game.Script;
 import com.wegas.core.persistence.variable.VariableDescriptor;
 import com.wegas.core.persistence.variable.statemachine.AbstractTransition;
-import com.wegas.log.xapi.*;
+import com.wegas.core.security.util.ActAsPlayer;
+import com.wegas.log.xapi.Xapi;
+import com.wegas.log.xapi.XapiI;
 import com.wegas.mcq.ejb.QuestionDescriptorFacade;
 import com.wegas.resourceManagement.ejb.IterationFacade;
 import com.wegas.resourceManagement.ejb.ResourceFacade;
 import com.wegas.reviewing.ejb.ReviewingFacade;
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.Reader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.UndeclaredThrowableException;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.annotation.Resource;
 import javax.ejb.LocalBean;
 import javax.ejb.Stateless;
@@ -60,28 +79,31 @@ public class ScriptFacade extends WegasAbstractFacade {
     private static final Logger logger = LoggerFactory.getLogger(ScriptFacade.class);
 
     /**
+     * Stops script after a given delay. (ms)
+     */
+    private static final long SCRIPT_DELAY = 1000L;
+
+    /**
      * name
      */
-    static final String CONTEXT = "currentDescriptor";
+    /* package */ static final String CONTEXT = "currentDescriptor";
     /**
-     * A single, thread safe, javascript engine (only language currently
-     * supported)
+     * A single, thread safe, javascript engine (only language currently supported)
      */
     private static final ScriptEngine engine;
     /**
-     * Pre-compiled script. nashorn specific __noSuchProperty__ hijacking : find
-     * a variableDescriptor's scriptAlias. Must be included in each Bindings.
+     * Pre-compiled script. nashorn specific __noSuchProperty__ hijacking : find a
+     * variableDescriptor's scriptAlias. Must be included in each Bindings.
      */
     private static final CompiledScript noSuchProperty;
 
+    /**
+     * Keep static scripts pre-compiled
+     */
+    private static final Helper.LRUCache<String, CachedScript> staticCache = new Helper.LRUCache<>(250);
+
     private static class CachedScript {
 
-        public CachedScript(CompiledScript script, String name, String version, String language) {
-            this.name = name;
-            this.script = script;
-            this.version = version;
-            this.language = language;
-        }
         private CompiledScript script;
 
         private String version;
@@ -89,12 +111,14 @@ public class ScriptFacade extends WegasAbstractFacade {
         private String language;
 
         private String name;
-    }
 
-    /**
-     * Keep static scripts pre-compiled
-     */
-    private static final Helper.LRUCache<String, CachedScript> staticCache = new Helper.LRUCache<>(250);
+        public CachedScript(CompiledScript script, String name, String version, String language) {
+            this.name = name;
+            this.script = script;
+            this.version = version;
+            this.language = language;
+        }
+    }
 
     /*
      * Initialize noSuchProperty and other nashorn stuff
@@ -104,26 +128,29 @@ public class ScriptFacade extends WegasAbstractFacade {
         NashornScriptEngineFactory factory = new NashornScriptEngineFactory();
         //engine = factory.getScriptEngine(new NHClassLoader());
 
-		engine = factory.getScriptEngine(new String[0], new NHClassLoader(), new NHClassFilter());
+        engine = factory.getScriptEngine(new String[0], new NHClassLoader(), new NHClassFilter());
         //engine = factory.getScriptEngine(new String[] {} , new NHClassLoader(), new NHClassFilter());
 
         CompiledScript compile = null;
         try {
             compile = ((Compilable) engine).compile(
-                    "(function(global){"
-                    + "  var defaultNoSuchProperty = global.__noSuchProperty__;" // Store nashorn's implementation
-                    + "  Object.defineProperty(global, '__noSuchProperty__', {"
-                    + "    value: function(prop){"
-                    + "      try{"
-                    + "        var ret = Variable.find(gameModel, prop).getInstance(self);"
-                    + "        print('SCRIPT_ALIAS_CALL: [GM]' + gameModel.getId() + ' [alias]' + prop);" // log usage if var exists
-                    + "        return ret;" // Try to find a VariableDescriptor's instance for that given prop
-                    + "      }catch(e){"
-                    + "        return defaultNoSuchProperty.call(global, prop);" // Use default implementation if no VariableDescriptor
-                    + "    }}"
-                    + "  });"
-                    + "  if (!Math._random) { Math._random = Math.random; Math.random = function random(){if (RequestManager.isTestEnv()) {return 0} else {return Math._random()} }}"
-                    + "})(this);"); // Run on Bindings
+                "(function(global){"
+                + "  var defaultNoSuchProperty = global.__noSuchProperty__;" // Store nashorn's implementation
+                + "  Object.defineProperty(global, '__noSuchProperty__', {"
+                + "    value: function(prop){"
+                + "      if (prop === 'engine'){"
+                + "        return null;"
+                + "      }"
+                + "      try{"
+                + "        var ret = Variable.find(gameModel, prop).getInstance(self);"
+                + "        print('SCRIPT_ALIAS_CALL: [GM]' + gameModel.getId() + ' [alias]' + prop);" // log usage if var exists
+                + "        return ret;" // Try to find a VariableDescriptor's instance for that given prop
+                + "      }catch(e){"
+                + "        return defaultNoSuchProperty.call(global, prop);" // Use default implementation if no VariableDescriptor
+                + "    }}"
+                + "  });"
+                + "  if (!Math._random) { Math._random = Math.random; Math.random = function random(){if (RequestManager.isTestEnv()) {return 0} else {return Math._random()} }}"
+                + "})(this);"); // Run on Bindings
         } catch (ScriptException e) {
             logger.error("noSuchProperty script compilation failed", e);
         }
@@ -214,7 +241,9 @@ public class ScriptFacade extends WegasAbstractFacade {
             throw WegasErrorMessage.error("ScriptFacade.populate requires a player !!!");
         }
 
-        if (player.getStatus() != Populatable.Status.LIVE) {
+        if (player.getStatus() != Populatable.Status.LIVE
+            && player.getStatus() != Populatable.Status.INITIALIZING
+            && player.getStatus() != Populatable.Status.SURVEY) {
             throw WegasErrorMessage.error("ScriptFacade.populate requires a LIVE player !!!");
         }
 
@@ -263,8 +292,8 @@ public class ScriptFacade extends WegasAbstractFacade {
         this.injectStaticScript(ctx, player.getGameModel());
 
         /**
-         * Then inject soft ones.
-         * It means a soft script may override methods defined in a hard coded one
+         * Then inject soft ones. It means a soft script may override methods defined in a hard
+         * coded one
          */
         for (GameModelContent script : player.getGameModel().getScriptLibraryList()) {
             ctx.setAttribute(ScriptEngine.FILENAME, "Server script " + script.getContentKey(), ScriptContext.ENGINE_SCOPE);
@@ -295,8 +324,8 @@ public class ScriptFacade extends WegasAbstractFacade {
         }
 
         if (cached.version == null
-                || !cached.version.equals(version)
-                || cached.script == null) {
+            || !cached.version.equals(version)
+            || cached.script == null) {
 
             CompiledScript compile;
             try {
@@ -352,8 +381,7 @@ public class ScriptFacade extends WegasAbstractFacade {
     }
 
     /**
-     * Inject script files specified in GameModel's property scriptFiles into
-     * engine
+     * Inject script files specified in GameModel's property scriptFiles into engine
      *
      * @param ctx ScriptContext to populate
      * @param gm  GameModel from which scripts are taken
@@ -364,8 +392,8 @@ public class ScriptFacade extends WegasAbstractFacade {
             return;
         }
 
-        String currentPath = getClass().getProtectionDomain().getCodeSource().getLocation().getPath();
-        Integer index = currentPath.indexOf("WEB-INF");
+        String currentPath = getClass().getProtectionDomain().getCodeSource().getLocation().toString();
+        Integer index = currentPath.indexOf("/WEB-INF");
         String root;
         if (index < 1) {
             // Seems we're not on a real deployed application
@@ -381,39 +409,42 @@ public class ScriptFacade extends WegasAbstractFacade {
         String cacheFileName;
         String version;
 
-        for (File f : getJavaScriptsRecursively(root, scriptURI.split(";"))) {
-            cacheFileName = "hard:" + f.getPath();
-            version = "" + f.lastModified();
+        try {
+            for (Path path : getJavaScriptsRecursively(root, scriptURI.split(";"))) {
+                cacheFileName = "hard:" + path;
+                version = Long.toString(Files.getLastModifiedTime(path).toMillis());
 
-            CachedScript cached = staticCache.get(cacheFileName);
+                CachedScript cached = staticCache.get(cacheFileName);
 
-            if (cached == null) {
-                // since putIfAbsent is synchronised, check existence first to reduce locking
-                cached = staticCache.putIfAbsentAndGet(cacheFileName, new CachedScript(null, cacheFileName, version, "JavaScript"));
-            }
+                if (cached == null) {
+                    // since putIfAbsent is synchronised, check existence first to reduce locking
+                    cached = staticCache.putIfAbsentAndGet(cacheFileName, new CachedScript(null, cacheFileName, version, "JavaScript"));
+                }
 
-            if (cached.version == null 
-                    || !cached.version.equals(version) 
+                if (cached.version == null
+                    || !cached.version.equals(version)
                     || cached.script == null) {
-                try ( FileInputStream fis = new FileInputStream(f);  InputStreamReader isr = new InputStreamReader(fis, StandardCharsets.UTF_8)) {
-                    cached.script = this.compile(isr);
-                    cached.version = version;
-                } catch (IOException e) {
-                    logger.warn("File {} was not found", f.getPath());
-                } catch (ScriptException ex) {
-                    throw new WegasScriptException(f.getPath(), ex.getLineNumber(), ex.getMessage());
+
+                    try (BufferedReader reader = Files.newBufferedReader(path)) {
+                        cached.script = this.compile(reader);
+                        cached.version = version;
+                    } catch (ScriptException ex) {
+                        throw new WegasScriptException(path.toString(), ex.getLineNumber(), ex.getMessage());
+                    }
+                }
+
+                try {
+                    ctx.setAttribute(ScriptEngine.FILENAME, "Static Scripts " + path, ScriptContext.ENGINE_SCOPE);
+                    cached.script.eval(ctx);
+                    logger.info("File {} successfully injected", path);
+                } catch (ScriptException ex) { // script exception (Java -> JS -> throw)
+                    throw new WegasScriptException(scriptURI, ex.getLineNumber(), ex.getMessage());
+                } catch (RuntimeException ex) { // Unwrapped Java exception (Java -> JS -> Java -> throw)
+                    throw new WegasScriptException(scriptURI, ex.getMessage());
                 }
             }
-
-            try {
-                ctx.setAttribute(ScriptEngine.FILENAME, "Static Scripts " + f.getPath(), ScriptContext.ENGINE_SCOPE);
-                cached.script.eval(ctx);
-                logger.info("File {} successfully injected", f);
-            } catch (ScriptException ex) { // script exception (Java -> JS -> throw)
-                throw new WegasScriptException(scriptURI, ex.getLineNumber(), ex.getMessage());
-            } catch (RuntimeException ex) { // Unwrapped Java exception (Java -> JS -> Java -> throw)
-                throw new WegasScriptException(scriptURI, ex.getMessage());
-            }
+        } catch (IOException | URISyntaxException ex) {
+            logger.warn("Unable to read hard coded server scripts");
         }
     }
 
@@ -433,13 +464,13 @@ public class ScriptFacade extends WegasAbstractFacade {
      *
      * @return whatever the script has returned
      */
-    private Object eval(Script script, Map<String, AbstractEntity> arguments) throws WegasScriptException {
+    private Object eval(Script script, Map<String, Object> arguments) throws WegasScriptException {
         if (script == null) {
             return null;
         }
         ScriptContext ctx = instantiateScriptContext(requestManager.getPlayer(), script.getLanguage());
 
-        for (Entry<String, AbstractEntity> arg : arguments.entrySet()) {        // Inject the arguments
+        for (Entry<String, Object> arg : arguments.entrySet()) {        // Inject the arguments
             if (arg.getValue() != null) {
                 ctx.getBindings(ScriptContext.ENGINE_SCOPE).put(arg.getKey(), arg.getValue());
             }
@@ -476,13 +507,13 @@ public class ScriptFacade extends WegasAbstractFacade {
         }
     }
 
-    private Object eval(CachedScript cachedScript, Map<String, AbstractEntity> arguments) throws WegasScriptException {
+    private Object eval(CachedScript cachedScript, Map<String, Object> arguments) throws WegasScriptException {
         if (cachedScript == null) {
             return null;
         }
         ScriptContext ctx = instantiateScriptContext(requestManager.getPlayer(), cachedScript.language);
 
-        for (Entry<String, AbstractEntity> arg : arguments.entrySet()) {        // Inject the arguments
+        for (Entry<String, Object> arg : arguments.entrySet()) {        // Inject the arguments
             if (arg.getValue() != null) {
                 ctx.getBindings(ScriptContext.ENGINE_SCOPE).put(arg.getKey(), arg.getValue());
             }
@@ -520,74 +551,64 @@ public class ScriptFacade extends WegasAbstractFacade {
     }
 
     /**
-     * extract all javascript files from the files list. If one of the files is
-     * a directory, recurse through it and fetch *.js.
+     * extract all javascript files from the files list. If one of the files is a directory, recurse
+     * through it and fetch *.js.
      * <p>
-     * Note: When iterating, if a script and its minified version stands in the
-     * directory, the minified is ignored (debugging purpose)
+     * Note: When iterating, if a script and its minified version stands in the directory, the
+     * minified is ignored (debugging purpose)
      *
      * @param root
      * @param files
      *
      * @return javascript file collection
      */
-    private Collection<File> getJavaScriptsRecursively(String root, String[] files) {
-        List<File> queue = new LinkedList<>();
-        List<File> result = new LinkedList<>();
+    private Collection<Path> getJavaScriptsRecursively(String root, String[] files) throws IOException, URISyntaxException {
+        List<Path> queue = new LinkedList<>();
 
         for (String file : files) {
-            File f = new File(root + "/" + file);
-            // Put directories in the recurse queue and files in result list
-            // this test may look redundant with the one done bellow... but...
-            // actually, it ensures a -min.js script given by the user is never ignored
-            if (f.isDirectory()) {
-                queue.add(f);
-            } else {
-                result.add(f);
+            if (!Helper.isNullOrEmpty(file.trim())) {
+                queue.add(Paths.get(new URI(root + "/" + file)));
             }
         }
 
-        while (queue.size() > 0) {
-            File current = queue.remove(0);
+        List<Path> result = new LinkedList<>();
 
-            if (!Files.isSymbolicLink(current.toPath()) && current.canRead()) {
-                if (current.isDirectory()) {
-                    File[] listFiles = current.listFiles();
-                    if (listFiles == null) {
-                        break;
-                    } else {
-                        queue.addAll(Arrays.asList(listFiles));
+        while (!queue.isEmpty()) {
+            Path current = queue.remove(0);
+            if (!Files.isSymbolicLink(current) && Files.isReadable(current)) {
+                if (Files.isDirectory(current)) {
+                    try (Stream<Path> children = Files.list(current)) {
+                        // queue children
+                        children.collect(Collectors.toCollection(() -> queue));
                     }
-                } else if (current.isFile()
-                        && current.getName().endsWith(".js") // Is a javascript
-                        && !isMinifedDuplicata(current)) { // avoid minified version when original exists
+                } else if (Files.isRegularFile(current)
+                    && current.toString().endsWith(".js")) {
+                    // collect all .js
                     result.add(current);
                 }
             }
         }
-        return result;
+
+        // at this point, result may contains plain and minified versions of the very same script
+        return result.stream().filter(p -> shouldKeep(p, result)).collect(Collectors.toList());
     }
 
     /**
-     * check if the given file is a minified version of an existing one
+     * Keep all file but minified which have non-minified version in the list
      *
-     * @param file
+     * @param path
+     * @param paths
      *
-     * @return true if this file is a minified version of an existing script
+     * @return
      */
-    private boolean isMinifedDuplicata(File file) {
-        if (file.getName().endsWith("-min.js")) {
-            String siblingPath = file.getPath().replaceAll("-min.js$", ".js");
-            File f = new File(siblingPath);
-            return f.exists();
+    private static boolean shouldKeep(Path path, List<Path> paths) {
+        String toString = path.toString();
+        if (toString.endsWith("-min.js")) {
+            String nonMin = toString.replaceAll("-min.js$", ".js");
+            return !paths.stream().anyMatch(p -> nonMin.equals(p.toString()));
         }
-        return false;
+        return true;
     }
-
-    /**
-     * Stops script after a given delay. (ms)
-     */
-    private static final long SCRIPT_DELAY = 1000L;
 
     /**
      * Runs a script with a delay ({@value #SCRIPT_DELAY} ms)
@@ -602,24 +623,25 @@ public class ScriptFacade extends WegasAbstractFacade {
      */
     public Object timeoutEval(Long playerId, Script script) throws WegasScriptException {
         final Player player = playerFacade.find(playerId);
-        requestManager.setPlayer(player);
 
-        final ScriptContext scriptContext = this.instantiateScriptContext(player, script.getLanguage());
+        try (ActAsPlayer a = requestManager.actAsPlayer(player)) {
 
-        final Script scriptCopy = new Script();
-        scriptCopy.setContent(JSTool.sanitize(script.getContent(), "$$internal$delay.poll();"));
-        scriptCopy.setLanguage(script.getLanguage());
-        scriptContext.getBindings(ScriptContext.ENGINE_SCOPE).put(JSTool.JS_TOOL_INSTANCE_NAME,
+            final ScriptContext scriptContext = this.instantiateScriptContext(player, script.getLanguage());
+
+            final Script scriptCopy = new Script();
+            scriptCopy.setContent(JSTool.sanitize(script.getContent(), "$$internal$delay.poll();"));
+            scriptCopy.setLanguage(script.getLanguage());
+            scriptContext.getBindings(ScriptContext.ENGINE_SCOPE).put(JSTool.JS_TOOL_INSTANCE_NAME,
                 new JSTool.JSToolInstance());
-        try (final Delay delay = new Delay(SCRIPT_DELAY, timeoutExecutorService)) {
-            scriptContext.getBindings(ScriptContext.ENGINE_SCOPE).put("$$internal$delay", delay);
-            return this.eval(scriptCopy, new HashMap<>());
-        } catch (WegasScriptException e) {
-            // try to restore original code
-            final String replaceCode = e.getMessage().replace(scriptCopy.getContent(), script.getContent());
-            throw new WegasScriptException(script.getContent(), replaceCode);
+            try (Delay delay = new Delay(SCRIPT_DELAY, timeoutExecutorService)) {
+                scriptContext.getBindings(ScriptContext.ENGINE_SCOPE).put("$$internal$delay", delay);
+                return this.eval(scriptCopy, new HashMap<>());
+            } catch (WegasScriptException e) {
+                // try to restore original code
+                final String replaceCode = e.getMessage().replace(scriptCopy.getContent(), script.getContent());
+                throw new WegasScriptException(script.getContent(), replaceCode);
+            }
         }
-
     }
     // ~~~ Sugar ~~~
 
@@ -631,44 +653,41 @@ public class ScriptFacade extends WegasAbstractFacade {
      *
      * @return eval result
      */
-    private Object eval(Player player, List<Script> scripts, Map<String, AbstractEntity> arguments) throws WegasScriptException {
+    private Object eval(Player player, List<Script> scripts, Map<String, Object> arguments) throws WegasScriptException {
         if (scripts.isEmpty()) {
             return null;
         }
-        while (scripts.remove(null)) {
-        }                                                                        //remove null scripts
         StringBuilder buf = new StringBuilder();
-        for (Script s : scripts) {                                              // Evaluate each script
-            try {
-                buf.append(s.getContent());
-                buf.append(";");
-            } catch (NullPointerException ex) {
-                //script does not exist
+        for (Script s : scripts) { // concatenate all scripts
+            if (s != null && !Helper.isNullOrEmpty(s.getContent())) {
+                buf.append(s.getContent()).append(';').append(System.lineSeparator());
             }
-            //result = engine.eval(s.getContent());
         }
         return this.eval(player, new Script(buf.toString()), arguments);
     }
 
     public Object eval(Player player, List<Script> scripts, VariableDescriptor context) {
-        Map<String, AbstractEntity> arguments = new HashMap<>();
+        Map<String, Object> arguments = new HashMap<>();
         arguments.put(ScriptFacade.CONTEXT, context);
         return this.eval(player, scripts, arguments);
     }
 
-    public Object eval_doNotUse(Player p, AbstractTransition transition, VariableDescriptor context) throws WegasScriptException {
+    @Deprecated
+    public Object evalDoNotUse(Player p, AbstractTransition transition, VariableDescriptor context) throws WegasScriptException {
         String name = "transition:" + transition.getId();
         CachedScript cached = getCachedScript(name, transition.getVersion().toString(), transition.getTriggerCondition().getContent());
 
-        Map<String, AbstractEntity> arguments = new HashMap<>();
+        Map<String, Object> arguments = new HashMap<>();
         arguments.put(ScriptFacade.CONTEXT, context);
 
         return this.eval(p, cached, arguments);
     }
 
-    private Object eval(Player player, CachedScript s, Map<String, AbstractEntity> arguments) throws WegasScriptException {
-        requestManager.setPlayer(player);
-        return this.eval(s, arguments);
+    @Deprecated
+    private Object eval(Player player, CachedScript s, Map<String, Object> arguments) throws WegasScriptException {
+        try (ActAsPlayer a = requestManager.actAsPlayer(player)) {
+            return this.eval(s, arguments);
+        }
     }
 
     /**
@@ -679,7 +698,7 @@ public class ScriptFacade extends WegasAbstractFacade {
      * @return eval result
      */
     public Object eval(Player p, Script s, VariableDescriptor context) throws WegasScriptException {
-        Map<String, AbstractEntity> arguments = new HashMap<>();
+        Map<String, Object> arguments = new HashMap<>();
         arguments.put(ScriptFacade.CONTEXT, context);
         return this.eval(p, s, arguments);
     }
@@ -691,9 +710,10 @@ public class ScriptFacade extends WegasAbstractFacade {
      *
      * @return eval result
      */
-    private Object eval(Player player, Script s, Map<String, AbstractEntity> arguments) throws WegasScriptException {
-        requestManager.setPlayer(player);
-        return this.eval(s, arguments);
+    private Object eval(Player player, Script s, Map<String, Object> arguments) throws WegasScriptException {
+        try (ActAsPlayer a = requestManager.actAsPlayer(player)) {
+            return this.eval(s, arguments);
+        }
     }
 
     /**
@@ -705,9 +725,27 @@ public class ScriptFacade extends WegasAbstractFacade {
      *
      * @throws WegasScriptException
      */
-    public Object eval(Long playerId, Script s, VariableDescriptor context) throws WegasScriptException { // ICI CONTEXT
-        Map<String, AbstractEntity> arguments = new HashMap<>();
+    public Object eval(Long playerId, Script s, VariableDescriptor context) throws WegasScriptException {
+        Map<String, Object> arguments = new HashMap<>();
         arguments.put(ScriptFacade.CONTEXT, context);
         return this.eval(playerFacade.find(playerId), s, arguments);
+    }
+
+    /**
+     * @param playerId
+     * @param s
+     * @param context
+     * @param arguments
+     *
+     * @return eval result
+     *
+     * @throws WegasScriptException
+     */
+    public Object eval(Player player, Script s, VariableDescriptor context, Map<String, Object> arguments) throws WegasScriptException {
+        Map<String, Object> args = arguments != null ? arguments : new HashMap<>();
+
+        args.put(ScriptFacade.CONTEXT, context);
+
+        return this.eval(player, s, arguments);
     }
 }

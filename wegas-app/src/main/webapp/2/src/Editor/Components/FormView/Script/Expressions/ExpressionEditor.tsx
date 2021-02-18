@@ -5,7 +5,6 @@ import Form from 'jsoninput';
 import { css } from 'emotion';
 import { parse } from '@babel/parser';
 import { WidgetProps } from 'jsoninput/typings/types';
-import { themeVar } from '../../../../../Components/Theme';
 import {
   IConditionAttributes,
   IInitAttributes,
@@ -23,23 +22,29 @@ import {
   scriptEditStyle,
   returnTypes,
 } from '../Script';
-import { useStore } from '../../../../../data/store';
+import { useStore } from '../../../../../data/Stores/store';
 import { GameModel } from '../../../../../data/selectors';
 import { parseStatement, generateStatement } from './astManagement';
 import { WegasTypeString } from '../../../../editionConfig';
-import { IconButton } from '../../../../../Components/Inputs/Button/IconButton';
 import { MessageString } from '../../../MessageString';
 import { WegasScriptEditor } from '../../../ScriptEditors/WegasScriptEditor';
 import { CommonView, CommonViewContainer } from '../../commonView';
 import { LabeledView, Labeled } from '../../labeled';
 import { deepDifferent } from '../../../../../Components/Hooks/storeHookFactory';
 import { pick } from 'lodash-es';
-import { CallExpression } from '@babel/types';
-import { StringLiteral } from '@babel/types';
-import { ResizeHandle } from '../../../ResizeHandle';
+import {
+  CallExpression,
+  StringLiteral,
+  emptyStatement,
+  isEmptyStatement,
+} from '@babel/types';
+import { themeVar } from '../../../../../Components/Style/ThemeVars';
+import { Button } from '../../../../../Components/Inputs/Buttons/Button';
+import { EmbeddedSrcEditor } from '../../../ScriptEditors/EmbeddedSrcEditor';
+import { State } from '../../../../../data/Reducer/reducers';
 
 const expressionEditorStyle = css({
-  backgroundColor: themeVar.primaryHoverColor,
+  backgroundColor: themeVar.Common.colors.HeaderColor,
   marginTop: '0.8em',
   padding: '2px',
   div: {
@@ -51,6 +56,13 @@ interface ExpressionEditorState {
   attributes?: PartialAttributes;
   schema?: WyiswygExpressionSchema;
   statement?: Statement;
+}
+
+function variableIdsSelector(s: State) {
+  return Object.keys(s.variableDescriptors)
+    .map(Number)
+    .filter(k => !isNaN(k))
+    .filter(k => GameModel.selectCurrent().itemsIds.includes(k));
 }
 
 export interface ExpressionEditorProps extends ScriptView {
@@ -66,31 +78,31 @@ export function ExpressionEditor({
   mode,
   onChange,
 }: ExpressionEditorProps) {
-  const [error, setError] = React.useState();
+  const [error, setError] = React.useState<string>();
   const [srcMode, setSrcMode] = React.useState(false);
-  const [newSrc, setNewSrc] = React.useState();
-  const [formState, setFormState] = React.useState<ExpressionEditorState>({});
+  const [newSrc, setNewSrc] = React.useState<string>();
+  const [formState, setFormState] = React.useState<ExpressionEditorState>({
+    statement,
+  });
 
   // Getting variables id
   // First it was done with GameModel.selectCurrent().itemsIds but this array is always full even if the real object are not loaded yet
   // The new way to get itemIds goes directy into the descriptors state and filter to get only the first layer of itemIds
-  const variableIds = useStore(
-    s =>
-      Object.keys(s.variableDescriptors)
-        .map(Number)
-        .filter(k => !isNaN(k))
-        .filter(k => GameModel.selectCurrent().itemsIds.includes(k)),
-    deepDifferent,
-  );
+  const variableIds = useStore(variableIdsSelector);
 
   React.useEffect(
     () => {
-      if (
-        !formState.statement ||
-        generate(formState.statement).code !== generate(statement).code
-      ) {
-        try {
-          const { attributes, error } = parseStatement(statement, mode);
+      try {
+        const { attributes, error } = parseStatement(
+          statement || emptyStatement(),
+          mode,
+        );
+
+        const isNewOrUnknown =
+          !formState.statement ||
+          isEmptyStatement(formState.statement) ||
+          generate(formState.statement).code !== generate(statement).code;
+        if (isNewOrUnknown) {
           if (error !== undefined) {
             setError(error);
           }
@@ -112,16 +124,18 @@ export function ExpressionEditor({
                 }
               }
             }
-
             setFormState({
               attributes,
               schema,
               statement,
             });
           });
-        } catch (e) {
-          setError(e.message);
         }
+      } catch (e) {
+        setError(e.message);
+        setFormState({
+          statement,
+        });
       }
     },
     /* eslint-disable react-hooks/exhaustive-deps */
@@ -223,7 +237,6 @@ export function ExpressionEditor({
               schemaProperties.comparator.value,
             );
           }
-
           const statement = generateStatement(newAttributes, schema, mode);
 
           setFormState({
@@ -259,10 +272,13 @@ export function ExpressionEditor({
     [onChange],
   );
 
+  // const test = formState.attributes;
+  // debugger;
+
   return (
     <div id={id} className={expressionEditorStyle}>
       {newSrc === undefined && error === undefined && (
-        <IconButton
+        <Button
           icon="code"
           pressed={error !== undefined}
           onClick={() => setSrcMode(sm => !sm)}
@@ -272,27 +288,26 @@ export function ExpressionEditor({
         <div className={scriptEditStyle}>
           <MessageString type="error" value={error} duration={10000} />
           {newSrc !== undefined && (
-            <IconButton
-              icon="check"
-              onClick={() => onScripEditorSave(newSrc)}
-            />
+            <Button icon="check" onClick={() => onScripEditorSave(newSrc)} />
           )}
-          <ResizeHandle minSize={100}>
-            <WegasScriptEditor
-              value={
-                newSrc === undefined
-                  ? formState.statement
-                    ? generate(formState.statement).code
-                    : ''
-                  : newSrc
-              }
-              onChange={setNewSrc}
-              noGutter
-              minimap={false}
-              returnType={returnTypes(mode)}
-              onSave={onScripEditorSave}
-            />
-          </ResizeHandle>
+          <EmbeddedSrcEditor
+            value={
+              newSrc === undefined
+                ? formState.statement
+                  ? generate(formState.statement).code
+                  : ''
+                : newSrc
+            }
+            onChange={setNewSrc}
+            noGutter
+            minimap={false}
+            returnType={returnTypes(mode)}
+            onSave={onScripEditorSave}
+            resizable
+            scriptContext={mode === 'SET' ? 'Server internal' : 'Client'}
+            Editor={WegasScriptEditor}
+            EmbeddedEditor={WegasScriptEditor}
+          />
         </div>
       ) : (
         <Form

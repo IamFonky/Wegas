@@ -1,11 +1,8 @@
 import * as React from 'react';
 import { css, cx } from 'emotion';
+import { flex, grow } from '../css/classes';
+import { classNameOrEmpty } from '../Helper/className';
 
-const flex = css({
-  display: 'flex',
-  // flexDirection: 'column',
-  width: '100%',
-});
 const vertical = css(flex, {
   flexDirection: 'row',
 });
@@ -27,40 +24,54 @@ const content = css({
 });
 
 export const Toolbar = Object.assign(
-  function Toolbar(props: {
-    vertical?: boolean;
-    children: React.ReactElement<{}>[];
-    className?: string;
-  }) {
+  function Toolbar(
+    props: {
+      vertical?: boolean;
+      children: React.ReactElement<{}>[];
+      onClick?: (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
+    } & ClassStyleId,
+  ) {
     return (
       <div
-        className={cx(
-          {
-            [cx(horizontal, flex)]: !props.vertical,
+        className={
+          cx({
+            [cx(horizontal, flex, grow)]: !props.vertical,
             [vertical]: Boolean(props.vertical),
-          },
-          props.className,
-        )}
+          }) + classNameOrEmpty(props.className)
+        }
+        style={props.style}
+        onClick={props.onClick}
       >
         {props.children}
       </div>
     );
   },
   {
-    Header(props: {
-      children?: React.ReactNode[] | React.ReactNode;
-      className?: string;
-    }) {
+    Header(
+      props: {
+        children?: React.ReactNode[] | React.ReactNode;
+      } & ClassStyleId,
+    ) {
       return (
-        <div className={cx(toolbar, props.className)}>{props.children}</div>
-      );
-    },
-    Content(props: { children?: React.ReactNode; className?: string }) {
-      return (
-        <div className={cx(flex, content, props.className)}>
+        <div
+          className={toolbar + classNameOrEmpty(props.className)}
+          style={props.style}
+        >
           {props.children}
         </div>
       );
     },
+    Content: React.forwardRef<
+      HTMLDivElement,
+      { children?: React.ReactNode } & ClassStyleId
+    >((props, ref) => (
+      <div
+        ref={ref}
+        className={cx(flex, content) + classNameOrEmpty(props.className)}
+        style={props.style}
+      >
+        {props.children}
+      </div>
+    )),
   },
 );

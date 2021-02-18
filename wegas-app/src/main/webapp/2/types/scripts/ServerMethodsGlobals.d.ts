@@ -11,37 +11,66 @@ interface WEvent {
 interface WDelayedEvent {
   delayedFire: (minutes: number, second: number, eventName: string) => void;
 }
-///
 
-interface GlobalServerMethod {
+interface ServerGlobalMethod {
+  '@class': 'ServerGlobalMethod';
   label: string;
   returns?: string;
   parameters: {}[];
 }
 
-interface GlobalServerMethods {
-  [method: string]: GlobalServerMethod | undefined;
+interface ServerGlobalObject {
+  [object: string]: ServerGlobalObject | ServerGlobalMethod | undefined;
 }
 
-interface ServerMethodPayload {
+interface ServerGlobalMethodPayload {
+  objects: [string, ...string[]];
   method: string;
-  schema?: GlobalServerMethod;
+  schema?: ServerGlobalMethod;
 }
 
 /**
  * Register a server method that can be used in wysywig
- * @param method - the method to add (ex: "Something.Else.call")
+ * @param objects - the objects containing the method (ex: PMGHelper.MailMethods.<method> => ["PMGHelper","MailMethods"])
+ * @param method - the method to add
  * @param schema - method's schema including : label, return type (optionnal) and the parameter's shemas
  */
-type ServerMethodRegister = (
+type ServerGlobalMethodRegister = (
+  objects: [string, ...string[]],
   method: string,
   schema: {
     label: string;
     returns?: string;
-    parameters: {}[];
+    parameters: { type: string; required: boolean }[];
   },
 ) => void;
 
+interface ServerVariableMethod {
+  parameters: {}[];
+  returns: 'number' | 'string' | 'boolean' | undefined;
+  serverCode: string;
+}
+
+interface ServerVariableMethodPayload extends ServerVariableMethod {
+  variableClass: string;
+  label: string;
+}
+
+interface ServerVariableMethods {
+  [variableClass: string]: {
+    [label: string]: ServerVariableMethod;
+  };
+}
+
+type ServerVariableMethodRegister = (
+  variableClass: string,
+  label: string,
+  parameters: {}[],
+  returns: 'number' | 'string' | 'boolean' | undefined,
+  serverCode: string,
+) => void;
+
 interface GlobalServerMethodClass {
-  registerMethod: ServerMethodRegister;
+  registerGlobalMethod: ServerGlobalMethodRegister;
+  registerVariableMethod: ServerVariableMethodRegister;
 }

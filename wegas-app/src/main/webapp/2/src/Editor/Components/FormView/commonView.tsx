@@ -1,6 +1,9 @@
 import * as React from 'react';
 import { css, cx } from 'emotion';
-import { featuresCTX } from '../../../Components/Contexts/FeaturesProvider';
+import {
+  featuresCTX,
+  isFeatureEnabled,
+} from '../../../Components/Contexts/FeaturesProvider';
 
 const containerStyle = css({
   position: 'relative',
@@ -14,6 +17,10 @@ const errorStyle = css({
 const borderTop = css({
   borderTop: '4px solid',
   paddingTop: '2px',
+});
+const borderBottom = css({
+  borderBottom: '4px solid',
+  marginBottom: '2px',
 });
 const shortInline = css({
   display: 'inline-block',
@@ -34,6 +41,7 @@ const LAYOUTS = {
 
 export interface CommonView {
   borderTop?: boolean;
+  borderBottom?: boolean;
   layout?: keyof typeof LAYOUTS;
   index?: number;
   readOnly?: boolean;
@@ -59,12 +67,13 @@ export function CommonViewContainer({
 
   if (
     view.featureLevel === undefined ||
-    currentFeatures.includes(view.featureLevel)
+    isFeatureEnabled(currentFeatures, view.featureLevel)
   ) {
     return (
       <div
         className={cx(containerStyle, layout, {
           [`${borderTop}`]: Boolean(view.borderTop),
+          [`${borderBottom}`]: Boolean(view.borderBottom),
         })}
       >
         {children}

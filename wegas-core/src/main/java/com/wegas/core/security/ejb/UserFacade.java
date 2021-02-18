@@ -1,8 +1,9 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.security.ejb;
@@ -10,8 +11,8 @@ package com.wegas.core.security.ejb;
 import com.wegas.core.Helper;
 import com.wegas.core.ejb.BaseFacade;
 import com.wegas.core.ejb.GameFacade;
+import com.wegas.core.ejb.GameModelFacade;
 import com.wegas.core.ejb.PlayerFacade;
-import com.wegas.core.exception.client.WegasAccessDenied;
 import com.wegas.core.exception.client.WegasConflictException;
 import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.exception.client.WegasNotFoundException;
@@ -31,7 +32,13 @@ import com.wegas.core.security.persistence.Permission;
 import com.wegas.core.security.persistence.Role;
 import com.wegas.core.security.persistence.Shadow;
 import com.wegas.core.security.persistence.User;
+import com.wegas.core.security.token.TokenAuthToken;
 import com.wegas.core.security.util.AuthenticationInformation;
+import com.wegas.core.security.util.AuthenticationMethod;
+import com.wegas.core.security.util.HashMethod;
+import com.wegas.core.security.util.JpaAuthentication;
+import com.wegas.core.security.util.Sudoer;
+import com.wegas.core.security.util.TokenInfo;
 import com.wegas.messaging.ejb.EMailFacade;
 import java.util.*;
 import javax.ejb.LocalBean;
@@ -49,11 +56,7 @@ import javax.servlet.http.HttpServletRequest;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.UsernamePasswordToken;
-import org.apache.shiro.crypto.RandomNumberGenerator;
-import org.apache.shiro.crypto.SecureRandomNumberGenerator;
-import org.apache.shiro.crypto.hash.Sha256Hash;
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.util.SimpleByteSource;
 import org.slf4j.LoggerFactory;
 
 /**
@@ -88,6 +91,12 @@ public class UserFacade extends BaseFacade<User> {
      */
     @Inject
     private GameFacade gameFacade;
+
+    /**
+     *
+     */
+    @Inject
+    private GameModelFacade gameModelFacade;
 
     /**
      *
@@ -142,19 +151,21 @@ public class UserFacade extends BaseFacade<User> {
      *
      * @return the just authenticated user
      */
-    public User authenticateFromToken(String email, String token) {
-        if (email != null && token != null) {
+    public User authenticateFromToken(TokenInfo tokenInfo) {
+        if (tokenInfo != null) {
             Subject subject = SecurityUtils.getSubject();
 
-            UsernamePasswordToken shiroToken = new UsernamePasswordToken(email, token);
-            shiroToken.setRememberMe(false);
+            TokenAuthToken at = new TokenAuthToken(
+                tokenInfo.getAccountId(),
+                tokenInfo.getToken());
+
             try {
-                requestManager.login(subject, shiroToken);
+                requestManager.login(subject, at);
                 User user = this.getCurrentUser();
                 AbstractAccount mainAccount = user.getMainAccount();
+
                 if (mainAccount instanceof JpaAccount) {
                     JpaAccount jpaAccount = (JpaAccount) mainAccount;
-                    jpaAccount.getShadow().setToken(null);
                     jpaAccount.setVerified(Boolean.TRUE);
                 }
 
@@ -162,16 +173,49 @@ public class UserFacade extends BaseFacade<User> {
 
                 return user;
             } catch (AuthenticationException aex) {
+                logger.error("Fails to log in with token {}", tokenInfo);
             }
         }
-        throw WegasErrorMessage.error("Email/token combination not found");
+        throw WegasErrorMessage.error("Token not found");
+    }
+
+    public JpaAuthentication getDefaultAuthMethod() {
+        return new JpaAuthentication(HashMethod.SHA_256, null,
+            Helper.generateSalt(), null);
+    }
+
+    /**
+     * Return the list of hash method the client may use to sign in. Such methods
+     *
+     *
+     * @param authInfo
+     *
+     * @return
+     */
+    public List<AuthenticationMethod> getAuthMethods(String username) {
+        List<AuthenticationMethod> methods = new ArrayList<>();
+        try {
+            requestManager.su();
+
+            for (AbstractAccount account : accountFacade.findAllByEmailOrUsername(username)) {
+                AuthenticationMethod m = account.getAuthenticationMethod();
+                if (m != null) {
+                    methods.add(m);
+                }
+            }
+
+        } finally {
+            requestManager.releaseSu();
+        }
+
+        return methods;
     }
 
     public User authenticate(AuthenticationInformation authInfo) {
         Subject subject = SecurityUtils.getSubject();
 
         User guest = null;
-        if (subject.isAuthenticated()) {
+        if (Helper.isLoggedIn(subject)) {
             AbstractAccount gAccount = accountFacade.find((Long) subject.getPrincipal());
             if (gAccount instanceof GuestJpaAccount) {
                 logger.error("Logged as guest");
@@ -180,16 +224,40 @@ public class UserFacade extends BaseFacade<User> {
             }
         }
 
-        //if (!currentUser.isAuthenticated()) {
-        UsernamePasswordToken token = new UsernamePasswordToken(authInfo.getLogin(), authInfo.getPassword());
+        String password = authInfo.getHashes().get(0);
+        UsernamePasswordToken token = new UsernamePasswordToken(authInfo.getLogin(), password);
         token.setRememberMe(authInfo.isRemember());
         try {
             requestManager.login(subject, token);
-            if (authInfo.isAgreed()) {
-                AbstractAccount account = accountFacade.find((Long) subject.getPrincipal());
-                if (account instanceof JpaAccount) {
-                    ((JpaAccount) account).setAgreedTime(new Date());
+
+            AbstractAccount account = accountFacade.find((Long) subject.getPrincipal());
+            if (account instanceof JpaAccount) {
+                JpaAccount jpaAccount = (JpaAccount) account;
+                String newHash = null;
+
+                if (jpaAccount.getShadow().getNextHashMethod() != null) {
+                    // shadow asks to use a new hash method
+                    // initialize newHash to trigger password update
+                    newHash = password;
                 }
+
+                HashMethod nextAuth = jpaAccount.getNextAuth();
+                if (nextAuth != null && authInfo.getHashes().size() > 1) {
+                    // client sent extra hashes, let's switch to the new method
+                    // migrate to next auth method silently
+                    newHash = authInfo.getHashes().get(1);
+                    jpaAccount.migrateToNextAuthMethod();
+                }
+
+                if (newHash != null) {
+                    jpaAccount.getShadow().generateNewSalt();
+                    jpaAccount.setPassword(newHash);
+                }
+            }
+
+            if (authInfo.isAgreed() && account instanceof JpaAccount) { // why JpaAccount only ?
+                account.setAgreedTime(new Date());
+                ((JpaAccount) account).setAgreedTime(new Date());
             }
 
             User user = this.getCurrentUser();
@@ -212,7 +280,7 @@ public class UserFacade extends BaseFacade<User> {
             User user;
             Subject subject = SecurityUtils.getSubject();
 
-            if (subject.isAuthenticated()
+            if (Helper.isLoggedIn(subject)
                 && accountFacade.find((Long) subject.getPrincipal()) instanceof GuestJpaAccount) {
                 /**
                  * Subject is authenticated as guest but try to sign up with a full account : let's
@@ -248,7 +316,7 @@ public class UserFacade extends BaseFacade<User> {
         requestManager.clearPermissions();
         Subject subject = SecurityUtils.getSubject();
         if (subject.isRunAs()) {
-            subject.releaseRunAs();
+            requestManager.releaseRunAs();
         } else {
             this.touchLastSeenAt(requestManager.getCurrentUser());
             // flush to db before logout !
@@ -273,7 +341,7 @@ public class UserFacade extends BaseFacade<User> {
     public AbstractAccount getCurrentAccount() {
         final Subject subject = SecurityUtils.getSubject();
 
-        if (subject.isRemembered() || subject.isAuthenticated()) {
+        if (Helper.isLoggedIn(subject)) {
             return accountFacade.find((Long) subject.getPrincipal());
         }
         throw new WegasNotFoundException("Unable to find an account");
@@ -315,7 +383,7 @@ public class UserFacade extends BaseFacade<User> {
         User u = null;
         try {
             u = accountFacade.findByUsername(username).getUser();
-        } catch (WegasNoResultException e) {
+        } catch (WegasNoResultException e) { // NOPMD
         }
         return u;
     }
@@ -330,6 +398,7 @@ public class UserFacade extends BaseFacade<User> {
         try {
             u = accountFacade.findByPersistentId(persistentId).getUser();
         } catch (WegasNoResultException e) {
+            logger.error("User does not exists");
         }
         return u;
     }
@@ -368,7 +437,11 @@ public class UserFacade extends BaseFacade<User> {
         for (AbstractAccount account : user.getAccounts()) {
             if (account != null) {
                 if (account instanceof JpaAccount) {
-                    ((JpaAccount) account).shadowPasword();
+                    JpaAuthentication authMethod = this.getDefaultAuthMethod();
+                    JpaAccount jpaAccount = (JpaAccount) account;
+                    jpaAccount.shadowPasword();
+                    jpaAccount.setCurrentAuth(authMethod.getMandatoryMethod());
+                    jpaAccount.setNextAuth(authMethod.getOptionalMethod());
                 }
 
                 account.shadowEmail();
@@ -449,10 +522,8 @@ public class UserFacade extends BaseFacade<User> {
 
             for (Permission permission : unRole.getPermissions()) {
                 String splitedPermission[] = permission.getValue().split(":");
-                if (splitedPermission.length >= 3) {
-                    if (splitedPermission[2].equals(instance)) {
-                        permissions.add(permission.getValue());
-                    }
+                if (splitedPermission.length >= 3 && splitedPermission[2].equals(instance)) {
+                    permissions.add(permission.getValue());
                 }
             }
             allRoles.add(role);
@@ -581,7 +652,7 @@ public class UserFacade extends BaseFacade<User> {
     }
 
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
-    public List<String> findRoles_native(User user) {
+    public List<String> findRolesNative(User user) {
         Query queryRoles = getEntityManager().createNamedQuery("Roles.findByUser_native", Role.class);
         queryRoles.setParameter(1, user.getId());
         return queryRoles.getResultList();
@@ -608,13 +679,13 @@ public class UserFacade extends BaseFacade<User> {
     }
 
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
-    public List<String> findAllUserPermissions_NATIVEJPA(User user) {
+    public List<String> findAllUserPermissionsNativeJpa(User user) {
         Query query = getEntityManager().createNamedQuery("Permission.findByUser_native");
         query.setParameter(1, user.getId());
         return query.getResultList();
     }
 
-    public List<Permission> findAllUserPermissions_JPA(User user) {
+    public List<Permission> findAllUserPermissionsJpa(User user) {
         List<Permission> perms = new ArrayList<>();
 
         for (Role role : this.findRoles(user)) {
@@ -671,21 +742,31 @@ public class UserFacade extends BaseFacade<User> {
      * @param gameId
      */
     public void addTrainerToGame(Long trainerId, Long gameId) {
+        // load the game to make sure it exists
         Game game = gameFacade.find(gameId);
-        User user = this.find(trainerId);
-        this.addUserPermission(user, "Game:View,Edit:g" + gameId);
+        requestManager.assertGameTrainer(game);
+        try (Sudoer su = requestManager.sudoer()) {
+            if (game != null) {
+                User user = this.find(trainerId);
+                this.addUserPermission(user, "Game:View,Edit:g" + gameId);
+            }
+        }
     }
 
     public void removeTrainer(Long gameId, User trainer) {
+        // load the game to make sure it exists
+        Game game = gameFacade.find(gameId);
+        requestManager.assertGameTrainer(game);
+        try (Sudoer su = requestManager.sudoer()) {
+            if (this.getCurrentUser().equals(trainer)) {
+                throw WegasErrorMessage.error("Cannot remove yourself");
+            }
 
-        if (this.getCurrentUser().equals(trainer)) {
-            throw WegasErrorMessage.error("Cannot remove yourself");
-        }
-
-        if (this.findEditors("g" + gameId).size() <= 1) {
-            throw WegasErrorMessage.error("Cannot remove last trainer");
-        } else {
-            this.deletePermissions(trainer, "Game:%Edit%:g" + gameId);
+            if (this.findEditors("g" + gameId).size() <= 1) {
+                throw WegasErrorMessage.error("Cannot remove last trainer");
+            } else {
+                this.deletePermissions(trainer, "Game:%Edit%:g" + gameId);
+            }
         }
     }
 
@@ -696,123 +777,52 @@ public class UserFacade extends BaseFacade<User> {
      * @param permissions
      */
     public void grantGameModelPermissionToUser(Long userId, Long gameModelId, String permissions) {
-        User user = this.find(userId);
+        GameModel gm = gameModelFacade.find(gameModelId);
+        requestManager.assertUpdateRight(gm);
+        try (Sudoer su = requestManager.sudoer()) {
+            User user = this.find(userId);
 
-        /*
+            /*
          * Revoke previous permissions (do not use removeScenarist method since
          * this method prevents to remove one own permissions,
-         */
-        this.deletePermissions(user, "GameModel:%:gm" + gameModelId);
+             */
+            this.deletePermissions(user, "GameModel:%:gm" + gameModelId);
 
-        // Grant new permission
-        this.addUserPermission(user, "GameModel:" + permissions + ":gm" + gameModelId);
+            // Grant new permission
+            this.addUserPermission(user, "GameModel:" + permissions + ":gm" + gameModelId);
+        }
     }
 
     public void removeScenarist(Long gameModelId, User scenarist) {
-        if (this.getCurrentUser().equals(scenarist)) {
-            throw WegasErrorMessage.error("Cannot remove yourself");
-        }
-
-        if (this.findEditors("gm" + gameModelId).size() <= 1) {
-            throw WegasErrorMessage.error("Cannot remove last scenarist");
-        } else {
-            //remove all permission matching  both gameModelId and userId
-            this.deletePermissions(scenarist, "GameModel:%:gm" + gameModelId);
-        }
-    }
-
-    private String generateToken(int length) {
-        RandomNumberGenerator rng = new SecureRandomNumberGenerator();
-        return rng.nextBytes(length / 2).toHex();
-    }
-
-    private String hashToken(String token, JpaAccount account) {
-        return new Sha256Hash(token,
-            (new SimpleByteSource(account.getShadow().getSalt())).getBytes()).toHex();
-    }
-
-    public void requestPasswordReset(String email, HttpServletRequest request) {
-        try {
-            requestManager.su();
-            JpaAccount account = accountFacade.findJpaByEmail(email);
-            if (account != null) {
-                this.sendEmailWithDisposableToken(request, account,
-                    "[Albasim Wegas] Reset Password Request",
-                    "Click <a href='{{link}}'>here</a> to reset your password.<br /><br />"
-                    + "If you did't request this email, then simply ignore this message",
-                    "reset", 60);
+        GameModel gm = gameModelFacade.find(gameModelId);
+        requestManager.assertUpdateRight(gm);
+        try (Sudoer su = requestManager.sudoer()) {
+            if (this.getCurrentUser().equals(scenarist)) {
+                throw WegasErrorMessage.error("Cannot remove yourself");
             }
-            this.flush();
-        } catch (WegasNoResultException ex) {
-            logger.error("No JPA account for {}", email);
-        } finally {
-            requestManager.releaseSu();
-        }
-    }
 
-    public void requestEmailValidation(HttpServletRequest request) {
-        User currentUser = requestManager.getCurrentUser();
-        if (currentUser != null) {
-            AbstractAccount account = currentUser.getMainAccount();
-
-            if (account != null && account instanceof JpaAccount) {
-                this.sendEmailWithDisposableToken(request, (JpaAccount) account,
-                    "[AlbaSim Wegas] Please validate your account",
-                    "Click <a href='{{link}}'>here</a> to confirm your email address.<br /><br />"
-                    + "If you did't request this verification, you can ignore this message",
-                    "verify", 60);
+            List<User> editors = this.findEditors("gm" + gameModelId);
+            if (editors.size() <= 1 && editors.contains(scenarist)) {
+                throw WegasErrorMessage.error("Cannot remove last scenarist");
+            } else {
+                //remove all permission matching  both gameModelId and userId
+                this.deletePermissions(scenarist, "GameModel:%:gm" + gameModelId);
             }
         }
     }
 
     /**
-     * Send a e mail to a user. Generates a disposable token with
+     * Send an e-mail to current user to verify its email address. It's only valid for JPAAccounts
      *
-     * @param request               current http request is used to guess the public hostname to
-     *                              generate the link to send
-     * @param account               Jpa account to send email to
-     * @param subject               Subject of the message
-     * @param text                  text of the message with "{{link}}" inside
-     * @param path                  reset or verify
-     * @param tokenValidityDuration how long the token will be valid, in minutes
+     * @param request http request is required to generate the link to send
      */
-    private void sendEmailWithDisposableToken(HttpServletRequest request, JpaAccount account,
-        String subject, String text, String path, long tokenValidityDuration) {
+    public void requestEmailValidation(HttpServletRequest request) {
         User currentUser = requestManager.getCurrentUser();
         if (currentUser != null) {
+            AbstractAccount account = currentUser.getMainAccount();
 
-            if (account != null && account instanceof JpaAccount) {
-                try {
-                    EMailFacade emailFacade = new EMailFacade();
-                    String token = generateToken(24);
-
-                    Long expirationDate = (new Date()).getTime() + tokenValidityDuration * 60 * 1000;
-
-                    String hashToken = expirationDate + ":" + hashToken(token, account);
-                    account.getShadow().setToken(hashToken);
-
-                    String theLink = Helper.getPublicBaseUrl(request)
-                        + "/#/" + path + "/" + account.getDetails().getEmail() + "/" + token;
-
-                    if (text.contains("{{link}}")) {
-                        text = text.replace("{{link}}", theLink);
-                    } else {
-                        text = text + "<br /><a href='" + theLink + "'>" + path.toUpperCase() + "</a>";
-                    }
-
-                    String body = "Hi " + account.getFirstname() + " " + account.getLastname() + ", "
-                        + "<br />"
-                        + "<br />"
-                        + text;
-
-                    String from = "noreply@" + Helper.getWegasProperty("mail.default_domain");
-                    emailFacade.send(account.getDetails().getEmail(), from, null, subject,
-                        body,
-                        Message.RecipientType.TO,
-                        "text/html; charset=utf-8", true);
-                } catch (MessagingException ex) {
-                    logger.error("Error while sending validation email to {}", account.getDetails().getEmail());
-                }
+            if (account instanceof JpaAccount) {
+                accountFacade.requestValidationLink((JpaAccount) account, request);
             }
         }
     }
@@ -914,7 +924,20 @@ public class UserFacade extends BaseFacade<User> {
         User user = guest.getUser();
         user.addAccount(account);
 
+        if (account.getShadow() == null) {
+            account.setShadow(new Shadow());
+        }
+        if (account.getDetails() == null) {
+            account.setDetails(new AccountDetails());
+        }
+
         accountFacade.create(account);
+
+        JpaAuthentication authMethod = this.getDefaultAuthMethod();
+
+        account.shadowPasword();
+        account.setCurrentAuth(authMethod.getMandatoryMethod());
+        account.setNextAuth(authMethod.getOptionalMethod());
         // Detach and delete account
         accountFacade.remove(guest.getId());
 
@@ -942,7 +965,8 @@ public class UserFacade extends BaseFacade<User> {
      */
     public static UserFacade lookup() {
         try {
-            return Helper.lookupBy(UserFacade.class);
+            return Helper.lookupBy(UserFacade.class
+            );
         } catch (NamingException ex) {
             logger.error("Error retrieving user facade", ex);
             return null;

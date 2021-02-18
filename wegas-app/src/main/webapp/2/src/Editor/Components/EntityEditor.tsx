@@ -7,13 +7,14 @@ import getEditionConfig from '../editionConfig';
 import { Actions } from '../../data';
 import { asyncSFC } from '../../Components/HOC/asyncSFC';
 import { deepUpdate } from '../../data/updateUtils';
-import { StoreConsumer, StoreDispatch, store } from '../../data/store';
+import { StoreConsumer, StoreDispatch, store } from '../../data/Stores/store';
 import { AvailableViews } from './FormView';
 import { cx } from 'emotion';
 import { flex, grow, flexColumn } from '../../css/classes';
 import { Edition } from '../../data/Reducer/globalState';
-import { shallowDifferent } from '../../Components/Hooks/storeHookFactory';
+import { deepDifferent } from '../../Components/Hooks/storeHookFactory';
 import { MessageString } from './MessageString';
+import { IAbstractEntity, IMergeable, IVariableDescriptor } from 'wegas-ts-api';
 
 export interface EditorProps<T> {
   entity?: T;
@@ -21,12 +22,13 @@ export interface EditorProps<T> {
   actions?: {
     label: React.ReactNode;
     action: (entity: T, path?: (string | number)[]) => void;
+    confirm?: boolean;
   }[];
   path?: (string | number)[];
   getConfig(entity: T): Promise<Schema<AvailableViews>>;
   error?: {
     message: string;
-    onVanish: () => void;
+    onRead: () => void;
   };
 }
 
@@ -184,7 +186,7 @@ async function WindowedEditor<T extends IMergeable>({
   const simpleCustomSchemaName = customSchemas.filtered[pathEntity['@class']];
   if (simpleCustomSchemaName !== undefined) {
     const nfSchema = customSchemas.views[simpleCustomSchemaName](
-      pathEntity as TypedEntity,
+      pathEntity,
       schema,
     );
     if (nfSchema !== undefined) {
@@ -193,10 +195,7 @@ async function WindowedEditor<T extends IMergeable>({
   }
   // Then try to get schema from complex filters
   for (const schemaName of customSchemas.unfiltered) {
-    const nfSchema = customSchemas.views[schemaName](
-      pathEntity as TypedEntity,
-      schema,
-    );
+    const nfSchema = customSchemas.views[schemaName](pathEntity, schema);
     if (nfSchema !== undefined) {
       customSchema = nfSchema;
       break;
@@ -208,19 +207,17 @@ async function WindowedEditor<T extends IMergeable>({
         value={error && error.message}
         type={'error'}
         duration={3000}
-        onLabelVanish={error && error.onVanish}
+        onLabelVanish={error && error.onRead}
       />
       <Form
         entity={pathEntity}
         update={update != null ? updatePath : update}
-        actions={actions.map(({ label, action }) => {
-          return {
-            label,
-            action: function(e: T) {
-              action(deepUpdate(entity, path, e) as T, path);
-            },
-          };
-        })}
+        actions={actions.map(action => ({
+          ...action,
+          action: function (e: T) {
+            action.action(deepUpdate(entity, path, e) as T, path);
+          },
+        }))}
         path={path}
         schema={overrideSchema(
           entity,
@@ -230,7 +227,7 @@ async function WindowedEditor<T extends IMergeable>({
     </div>
   );
 }
-export const AsyncVariableForm = asyncSFC<EditorProps<{ '@class': string }>>(
+export const AsyncVariableForm = asyncSFC<EditorProps<IMergeable>>(
   WindowedEditor,
   () => <div>load...</div>,
   ({ err }: { err: Error }) => (
@@ -239,86 +236,117 @@ export const AsyncVariableForm = asyncSFC<EditorProps<{ '@class': string }>>(
 );
 
 /**
- * Retrieve error message from stored events
- * @param state the events stored
- * @param dispatch the dispatcher fn of the
+ * Retrieve message event and make it readable
+ * @param event - the event to parse
  */
-export const getError = (
-  state: Readonly<WegasEvents[]>,
-  dispatch: StoreDispatch,
-) => {
-  const onVanish = () => dispatch(Actions.EditorActions.editorErrorRemove());
-  if (state.length > 0) {
-    const currentEvent = state[0];
-    switch (currentEvent['@class']) {
-      case 'ClientEvent':
-        return { message: currentEvent.error, onVanish };
-      case 'ExceptionEvent': {
-        if (currentEvent.exceptions.length > 0) {
-          const currentException = currentEvent.exceptions[0];
-          switch (currentException['@class']) {
+export function parseEvent(
+  event: WegasEvent,
+  dispatch: StoreDispatch = store.dispatch,
+) {
+  const onRead = () =>
+    dispatch(Actions.EditorActions.editorEventRead(event.timestamp));
+  switch (event['@class']) {
+    case 'ClientEvent':
+      return { message: event.error, onRead };
+    case 'ExceptionEvent': {
+      if (event.exceptions.length > 0) {
+        let message = 'Exceptions :';
+        for (const exception of event.exceptions) {
+          switch (exception['@class']) {
             case 'WegasConflictException':
-              return { message: 'Conflict between variables', onVanish };
+              message += 'Conflict between variables';
+              break;
             case 'WegasErrorMessage':
-              return { message: currentException.message, onVanish };
+              message += exception.message;
+              break;
+
             case 'WegasNotFoundException':
-              return { message: currentException.message, onVanish };
+              message += exception.message;
+              break;
+
             case 'WegasOutOfBoundException': {
-              const min = currentException.min ? currentException.min : '-∞';
-              const max = currentException.max ? currentException.max : '∞';
+              const min = exception.min ? exception.min : '-∞';
+              const max = exception.max ? exception.max : '∞';
               const error =
                 '"' +
-                currentException.variableName +
+                exception.variableName +
                 '" is out of bound. <br>(' +
-                currentException.value +
+                exception.value +
                 ' not in [' +
                 min +
                 ';' +
                 max +
                 '])';
-              return { message: error, onVanish };
+              message += error;
+              break;
             }
             case 'WegasScriptException': {
-              let error = currentException.message;
-              if (currentException.lineNumber) {
-                error += ' at line ' + currentException.lineNumber;
+              let error = exception.message;
+              if (exception.lineNumber) {
+                error += ' at line ' + exception.lineNumber;
               }
-              if (currentException.script) {
-                error += ' in script ' + currentException.script;
+              if (exception.script) {
+                error += ' in script ' + exception.script;
               }
-              return { message: error, onVanish };
+              message += error;
+              break;
             }
             case 'WegasWrappedException':
-              return {
-                message: 'Unexpected error: ' + currentException.message,
-                onVanish,
-              };
+              message = 'Unexpected error: ' + exception.message;
+              break;
             default:
-              return { message: 'Severe error', onVanish };
+              message += 'Severe error';
           }
         }
+        return { message, onRead };
       }
     }
   }
-  return undefined;
-};
+  return { message: `Unknown event : ${event['@class']}`, onRead };
+}
 
-export const getConfig = (state: Readonly<Edition>) => (
+/**
+ * Retrieve error message from stored events
+ * @param state the events stored
+ * @param dispatch the dispatcher fn of the
+ * @param index the index of the event
+ */
+export function parseEventFromIndex(
+  state: Readonly<WegasEvent[]>,
+  dispatch: StoreDispatch = store.dispatch,
+  index: number = 0,
+) {
+  if (state.length > index) {
+    const currentEvent = state[index];
+    if (currentEvent) {
+      parseEvent(currentEvent, dispatch);
+    }
+    return undefined;
+  }
+}
+
+export function getStateConfig(
+  state: Readonly<Edition>,
   entity: IVariableDescriptor,
-) => {
+) {
   return 'config' in state && state.config != null
     ? Promise.resolve(state.config)
     : (getEditionConfig(entity) as Promise<Schema<AvailableViews>>);
-};
+}
 
-export const getUpdate = (state: Readonly<Edition>, dispatch: StoreDispatch) =>
-  'actions' in state && state.actions.save
+export function getConfig(state: Readonly<Edition>) {
+  return (entity: IVariableDescriptor) => getStateConfig(state, entity);
+}
+
+export function getUpdate(state: Readonly<Edition>, dispatch: StoreDispatch) {
+  return 'actions' in state && state.actions.save
     ? state.actions.save
     : (entity: IAbstractEntity) => {
         dispatch(Actions.EditorActions.saveEditor(entity));
       };
+}
 
-export const getEntity = (state?: Readonly<Edition>) => {
+export function getEntity(state?: Readonly<Edition>) {
   if (!state) {
     return undefined;
   }
@@ -336,7 +364,7 @@ export const getEntity = (state?: Readonly<Edition>) => {
     default:
       return undefined;
   }
-};
+}
 
 export default function VariableForm(props: {
   entity?: Readonly<IVariableDescriptor>;
@@ -358,7 +386,7 @@ export default function VariableForm(props: {
           }
         }
       }}
-      shouldUpdate={shallowDifferent}
+      shouldUpdate={deepDifferent}
     >
       {({ state, dispatch }) => {
         if (state == null || state.entity == null) {
@@ -377,7 +405,7 @@ export default function VariableForm(props: {
                 : {},
             )}
             entity={state.entity}
-            error={getError(state.events, dispatch)}
+            error={parseEventFromIndex(state.events)}
           />
         );
       }}

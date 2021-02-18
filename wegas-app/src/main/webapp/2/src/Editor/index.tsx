@@ -7,17 +7,48 @@ import Layout from './Components/Layout';
 import { LibrariesLoader } from './Components/LibrariesLoader';
 import { ClassesProvider } from '../Components/Contexts/ClassesProvider';
 import { FeaturesProvider } from '../Components/Contexts/FeaturesProvider';
-import { ThemeProvider } from '../Components/Theme';
-import '../data/store';
+import { ThemeProvider } from '../Components/Style/Theme';
+import '../data/Stores/store';
+import { importPageComponents } from '../Components/PageComponents/tools/componentFactory';
+import { PopupManager } from '../Components/PopupManager';
+// import * as less from 'less';
+// import { wlog } from '../Helper/wegaslog';
 
-// Importing all the files containing ".component." to allow component registration without explicit import
-const componentModules = require.context(
-  '../',
-  true,
-  /\.component\./,
-  'lazy-once',
-);
-componentModules.keys().map(k => componentModules(k));
+importPageComponents();
+
+// function TestLessLib() {
+//   const lesstest = less
+//     .render(
+//       `.wegas {
+//       @MainColor: blue;
+//       @DisabledColor: grey;
+//       @TextColor: white;
+
+//       &.wegas-btn {
+//         background-color: @MainColor;
+//         color: @TextColor;
+//         border-style: none;
+//         padding-left: 5px;
+//         padding-right: 5px;
+//         padding-top: 2px;
+//         padding-bottom: 2px;
+//         cursor: pointer;
+//         &.disabled {
+//           background-color: @DisabledColor;
+//           cursor: initial;
+//         }
+//       }
+//     }`,
+//     )
+//     .then(output => output.css)
+//     .catch(error => {
+//       wlog(error);
+//       return '';
+//     });
+
+//   wlog(lesstest);
+//   return null;
+// }
 
 function mount() {
   render(
@@ -26,7 +57,9 @@ function mount() {
         <ClassesProvider>
           <LibrariesLoader>
             <ThemeProvider contextName="editor">
-              <Layout />
+              <PopupManager>
+                <Layout />
+              </PopupManager>
             </ThemeProvider>
           </LibrariesLoader>
         </ClassesProvider>

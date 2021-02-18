@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /**
@@ -883,9 +883,9 @@ YUI.add('wegas-fileexplorer', function(Y) {
             }
         }
     );
-
-
     Wegas.FileExplorer = FileExplorer;
+
+
     FileUploader = Y.Base.create('wegas-fileuploader', Y.Widget, [Y.WidgetParent], {
         initializer: function() {
             this.fileList = [];

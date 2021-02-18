@@ -1,15 +1,22 @@
+//import * as Color from 'color';
 import { css, cx } from 'emotion';
-import { themeVar } from '../Components/Theme';
+import { themeVar } from '../Components/Style/ThemeVars';
 
 // Display
 export const flex = css({
   display: 'flex',
+});
+export const grid = css({
+  display: 'grid',
 });
 export const block = css({
   display: 'block',
 });
 export const hidden = css({
   display: 'none',
+});
+export const hiddenImportant = css({
+  display: 'none !important',
 });
 
 // Layout constraints
@@ -38,12 +45,25 @@ export const showOverflow = css({
 });
 
 // Size
-export const expand = css({
+export const expandBoth = css({
   width: '100%',
   height: '100%',
 });
-export const schrink = css({
+export const expandWidth = css({
+  width: '100%',
+});
+export const expandHeight = css({
+  height: '100%',
+});
+export const shrinkBoth = css({
   width: 'fit-content',
+  height: 'fit-content',
+});
+export const shrinkWidth = css({
+  width: 'fit-content',
+});
+export const shrinkHeight = css({
+  height: 'fit-content',
 });
 
 // Flex
@@ -56,8 +76,15 @@ export const flexColumn = css({
 export const flexRow = css({
   flexDirection: 'row',
 });
+export const flexRowReverse = css({
+  flexDirection: 'row-reverse',
+  width: 'fit-content',
+});
 export const flexWrap = css({
   flexWrap: 'wrap',
+});
+export const flexDistribute = css({
+  justifyContent: 'space-evenly',
 });
 
 // Position
@@ -67,28 +94,64 @@ export const textCenter = css({
 export const itemCenter = css({
   alignItems: 'center',
 });
-export const centeredContent = css({
+export const contentCenter = css({
+  alignContent: 'center',
+});
+export const justifyCenter = css({
   justifyContent: 'center',
 });
 export const foregroundContent = css({
   zIndex: 1000,
 });
 
-/* Paddings */
-export const defaultPaddingLeft = css({
+/* Spaces */
+export const componentMarginLeft = css({
+  marginLeft: '5px',
+});
+
+export const componentMarginRight = css({
+  marginRight: '5px',
+});
+
+export const defaultMarginLeft = css({
   marginLeft: '10px',
 });
 
-export const defaultPaddingRight = css({
+export const defaultMarginRight = css({
   marginRight: '10px',
 });
 
-export const defaultPaddingTop = css({
+export const defaultMarginTop = css({
   marginTop: '10px',
 });
 
+export const defaultMarginBottom = css({
+  marginBottom: '10px',
+});
+
+export const defaultMargin = cx(
+  defaultMarginTop,
+  defaultMarginRight,
+  defaultMarginBottom,
+  defaultMarginLeft,
+);
+
+export const autoMargin = css({ margin: 'auto' });
+
+export const defaultPaddingLeft = css({
+  paddingLeft: '10px',
+});
+
+export const defaultPaddingRight = css({
+  paddingRight: '10px',
+});
+
+export const defaultPaddingTop = css({
+  paddingTop: '10px',
+});
+
 export const defaultPaddingBottom = css({
-  marginTop: '10px',
+  paddingTop: '10px',
 });
 
 export const defaultPadding = cx(
@@ -100,9 +163,100 @@ export const defaultPadding = cx(
 
 // Components
 export const button = css({
-  color: themeVar.primaryLighterTextColor,
+  color: themeVar.Common.colors.DarkTextColor,
   ':hover,:focus': {
-    color: themeVar.primaryHoverColor,
+    color: themeVar.Common.colors.HoverColor,
     outline: 'none',
   },
+});
+
+// Editor
+export const localSelection = css({
+  backgroundColor: themeVar.Common.colors.HeaderColor,
+});
+export const globalSelection = css({
+  //  borderStyle: 'solid',
+  //  borderWidth: '2px',
+  //  borderColor: themeVar.Common.colors.BorderColor,
+  borderRadius: themeVar.Common.dimensions.BorderRadius,
+  boxShadow: `0px 0px 0px 1px ${themeVar.Common.colors.PrimaryColor}`,
+});
+export const searchSelection = css({
+  backgroundColor: themeVar.Common.colors.HighlightColor,
+});
+
+// Layout base styles
+export const layoutStyle = css({
+  color: themeVar.Common.colors.DarkTextColor,
+  backgroundColor: themeVar.Common.colors.BackgroundColor,
+  fontFamily: themeVar.Common.others.TextFont1,
+});
+export const headerStyle = css({
+  backgroundColor: themeVar.Common.colors.HeaderColor,
+});
+export const contentStyle = css({
+  margin: '5px',
+  // backgroundColor: themeVar.Common.colors.BackgroundColor,
+});
+
+export const disabledColorStyle = css({
+  color: themeVar.Common.colors.DisabledColor,
+});
+
+export const infoShortTextStyle = css({
+  color: '#AAAAAA', // TODO add in Theme
+});
+
+export const hoverColorInsetShadow = css({
+  boxShadow: 'inset 0 0 0 2px var(--common-colors-hovercolor)',
+});
+
+export const thinHoverColorInsetShadow = css({
+  boxShadow: 'inset 0 0 0 1px var(--common-colors-hovercolor)',
+});
+
+export const highlightColorInsetShadow = css({
+  boxShadow: 'inset 0 0 0 2px var(--common-colors-highlightcolor)',
+});
+
+export const hatchedBackground = css({
+  background:
+    'repeating-Linear-gradient( 45deg, #ffffff80, #ffffff80 10px, var(--common-colors-hovercolor) 10px,  var(--common-colors-hovercolor) 20px);',
+  zIndex: 1000,
+});
+
+export const thinHatchedBackground = css({
+  background:
+    'repeating-Linear-gradient( 45deg, #ffffff80, #ffffff80 5px, var(--common-colors-hovercolor) 5px,  var(--common-colors-hovercolor) 10px);',
+  zIndex: 1000,
+});
+
+export const highlightedHatchedBackground = css({
+  background:
+    //`repeating-Linear-gradient( 45deg, #ffffff80, #ffffff80 10px, ${Color(themeVar.Common.colors.HoverColor).darken(0.5).toString()} 10px, ${Color(themeVar.Common.colors.HoverColor).darken(0.5).toString()} 20px);`,
+    `repeating-Linear-gradient( 45deg, #ffffff80, #ffffff80 10px, var(--common-colors-highlightcolor) 10px, var(--common-colors-highlightcolor) 20px);`,
+  zIndex: 1000,
+});
+
+export const dropZoneStyle = css({
+  borderStyle: 'solid',
+  borderWidth: '2px',
+  borderColor: themeVar.Common.colors.HighlightColor,
+});
+
+export const unreadSignalStyle = css({
+  '::before': {
+    content: '"New"',
+    transform: 'rotate(-90deg)',
+    position: 'absolute',
+    fontSize: '10pt',
+    fontWeight: 'bold',
+    color: 'orange',
+  },
+});
+
+export const unreadSpaceStyle = css({
+  minWidth: '30px',
+  display: 'flex',
+  alignItems: 'center',
 });

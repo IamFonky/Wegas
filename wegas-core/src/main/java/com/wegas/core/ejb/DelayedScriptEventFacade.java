@@ -1,8 +1,9 @@
-/*
+
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.core.ejb;
@@ -12,11 +13,16 @@ import com.wegas.core.event.internal.DelayedEventPayload;
 import com.wegas.core.exception.client.WegasErrorMessage;
 import com.wegas.core.persistence.AbstractEntity;
 import com.wegas.core.persistence.game.Player;
+import com.wegas.core.security.util.ActAsPlayer;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Resource;
-import javax.ejb.*;
+import javax.ejb.LocalBean;
+import javax.ejb.Singleton;
+import javax.ejb.Timeout;
+import javax.ejb.Timer;
+import javax.ejb.TimerService;
 import javax.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,10 +65,12 @@ public class DelayedScriptEventFacade implements DelayedScriptEventFacadeI {
                 rm.setPath(payload.getEventName());
                 Player p = playerFacade.find(payload.getPlayerId());
 
-                // fire Script (ie base mechanism and static server script eval)
-                scriptEventFacade.fire(p, payload.getEventName());
-                // force FSM evaluation and make sur EntityManager has flush
-                requestFacade.commit(p);
+                try (ActAsPlayer a = rm.actAsPlayer(p)) {
+                    // fire Script (ie base mechanism and static server script eval)
+                    scriptEventFacade.fire(p, payload.getEventName());
+                    // force FSM evaluation and make sur EntityManager has flush
+                    requestFacade.commit(p);
+                }
 
                 rm.markManagermentStartTime();
                 /*
@@ -100,7 +108,7 @@ public class DelayedScriptEventFacade implements DelayedScriptEventFacadeI {
             long duration = (minutes * 60 + seconds) * 1000;
             try {
                 timerService.createTimer(duration, new DelayedEventPayload(requestFacade.getPlayer().getId(),
-                        requestManager.getCurrentUser().getMainAccount().getId(), eventName));
+                    requestManager.getCurrentUser().getMainAccount().getId(), eventName));
             } catch (IllegalArgumentException ex) {
                 throw WegasErrorMessage.error("Timer duration is not valid");
             }

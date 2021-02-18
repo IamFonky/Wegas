@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 
@@ -71,9 +71,12 @@ YUI.add('wegas-model-propagator', function(Y) {
             return output;
         },
         syncDiff: function(response) {
-            var diff = response.response.entity.get("val");
-            this.content.set("content", this._genOutput(diff));
-            this.content.syncUI();
+            if (response.response.entity) {
+                var diff = response.response.entity.get("val");
+                this.content.setContent(this._genOutput(diff));
+            } else {
+                this.content.setContent("Nothing to propagate");
+            }
             this.waitForDiff = false;
         },
         propagate: function() {

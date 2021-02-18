@@ -1,5 +1,6 @@
-import { store } from '../store';
+import { store } from '../Stores/store';
 import { isMatch } from 'lodash-es';
+import { IVariableInstance } from 'wegas-ts-api';
 
 /**
  * Find a variableDescriptor for an id

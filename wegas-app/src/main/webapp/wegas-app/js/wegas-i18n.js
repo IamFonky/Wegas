@@ -2,7 +2,7 @@
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018  School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021  School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 /**
@@ -56,7 +56,8 @@ YUI.add("wegas-i18n", function(Y) {
          * Take the initial string and replace ALL parameters by theirs argument value
          * provided by k/v in args object.
          *
-         * All paramters (i.e. identifier [a-zA-Z0-9_] surrounded by '{{' and '}}') are mandatory
+         * All parameters (i.e. identifier [a-zA-Z0-9_] surrounded by '{{' and '}}') are mandatory.
+         * Escape sequence is allowed for preventing replacement: \\{ and \\}
          *
          */
         function mapArguments(str, args, tName) {
@@ -70,7 +71,7 @@ YUI.add("wegas-i18n", function(Y) {
                     return "[I18N] MISSING MANDATORY ARGUMENT \"" + key + "\" FOR \"" + tName + "\"";
                 }
             }
-            return str;
+            return str.replace(/\\{/g, '{').replace(/\\}/g, '}');
         }
 
         function interpolateParam(str, param) {
@@ -435,15 +436,17 @@ YUI.add("wegas-i18n", function(Y) {
             }
         }
 
-        function parseNumber(value, formatName) {
-            return Y.Number.parse(value, getFormatConfig(formatName));
+        function parseNumber(value, format) {
+            return Y.Number.parse(value, getFormatConfig(format));
         }
 
-        function formatNumber(value, formatName) {
-            return Y.Number.format(+value, getFormatConfig(formatName));
+        function formatNumber(value, format) {
+            return Y.Number.format(+value, getFormatConfig(format));
         }
 
-        function getFormatConfig(formatName) {
+        // Format is either a string (the name of a predefined format) or
+        // an object, which may overwrite any locale-specific setting.
+        function getFormatConfig(format) {
             var locale = currentNumericLocale().split(/[-_]/),
                 lang = locale[0],
                 variant = locale[1],
@@ -453,8 +456,8 @@ YUI.add("wegas-i18n", function(Y) {
             if (Y.Wegas.I18n._tables[lang]) {
                 // main language exists
 
-                if (formatName) {
-                    extra = getMostSpecificValue(lang, variant, "numbers.extra." + formatName, "object");
+                if (format && typeof format === "string") {
+                    extra = getMostSpecificValue(lang, variant, "numbers.extra." + format, "object");
                     if (extra && typeof extra === "object") {
                         Y.mix(formatConfig, extra);
                     }
@@ -463,6 +466,10 @@ YUI.add("wegas-i18n", function(Y) {
                 base = getMostSpecificValue(lang, variant, "numbers.base", "object");
                 if (base && typeof base === "object") {
                     Y.mix(formatConfig, base);
+                }
+                
+                if (format && typeof format === "object") {
+                    formatConfig = Y.mix(Y.mix({}, format), formatConfig);
                 }
 
             }

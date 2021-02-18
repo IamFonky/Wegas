@@ -1,14 +1,28 @@
-import { normalizeDatas, NormalizedData, discriminant } from './normalize';
-import { IManagedResponse } from '../API/rest';
-import * as ActionType from './actionTypes';
-import { PageIndex } from '../API/pages.api';
 import { Schema } from 'jsoninput';
-import { AvailableViews } from '../Editor/Components/FormView';
-import { StoreDispatch } from './store';
-import { EditingState, closeEditor, Edition } from './Reducer/globalState';
-import { getEntityActions } from '../Editor/editionConfig';
-import { VariableDescriptorState } from './Reducer/VariableDescriptorReducer';
+import {
+  IAbstractContentDescriptor,
+  IAbstractEntity,
+  IGame,
+  IGameModel,
+  IGameModelLanguage,
+  IScript,
+  ITeam,
+  WegasClassNames,
+} from 'wegas-ts-api';
+import { IManagedResponse } from '../API/rest';
 import { shallowDifferent } from '../Components/Hooks/storeHookFactory';
+import { AvailableViews } from '../Editor/Components/FormView';
+import { getEntityActions } from '../Editor/editionConfig';
+import * as ActionType from './actionTypes';
+import { discriminant, normalizeDatas, NormalizedData } from './normalize';
+import {
+  closeEditor,
+  EditingState,
+  Edition,
+  EditorAction,
+} from './Reducer/globalState';
+import { VariableDescriptorState } from './Reducer/VariableDescriptorReducer';
+import { StoreDispatch, store } from './Stores/store';
 
 export { ActionType };
 export type ActionTypeValues = ValueOf<typeof ActionType>;
@@ -27,15 +41,16 @@ const variableEditAction = <TA extends ActionTypeValues>(type: TA) => <
   path?: TA extends ValueOf<typeof ActionType.FSM_EDIT>
     ? string[]
     : (string | number)[];
-  actions: {
-    save?: (entity: TE) => void;
-    more?: {
-      [id: string]: {
-        label: React.ReactNode;
-        action: (entity: TE, path: string[]) => void;
-      };
-    };
-  };
+  actions: EditorAction<TE>;
+  // {
+  //   save?: (entity: TE) => void;
+  //   more?: {
+  //     [id: string]: {
+  //       label: React.ReactNode;
+  //       action: (entity: TE, path: string[]) => void;
+  //     };
+  //   };
+  // };
 }) => createAction(type, data);
 
 /**
@@ -44,28 +59,48 @@ const variableEditAction = <TA extends ActionTypeValues>(type: TA) => <
 export const ActionCreator = {
   // ENTITY_UPDATE: (data: NormalizedData) =>
   //   createAction(ActionType.ENTITY_UPDATE, data),
-  EDITOR_ERROR_REMOVE: () => createAction(ActionType.EDITOR_ERROR_REMOVE, {}),
-  EDITOR_ERROR: (data: { error: string }) =>
-    createAction(ActionType.EDITOR_ERROR, data),
+  EDITOR_EVENT_REMOVE: (data: { timestamp: number }) =>
+    createAction(ActionType.EDITOR_EVENT_REMOVE, data),
+  EDITOR_EVENT_READ: (data: { timestamp: number }) =>
+    createAction(ActionType.EDITOR_EVENT_READ, data),
+  EDITOR_EVENT: (data: WegasEvent) =>
+    createAction(ActionType.EDITOR_EVENT, data),
+  EDITOR_ADD_EVENT_HANDLER: (data: {
+    id: string;
+    type: keyof WegasEvents;
+    cb: WegasEventHandler;
+  }) => createAction(ActionType.EDITOR_ADD_EVENT_HANDLER, data),
+  EDITOR_REMOVE_EVENT_HANDLER: (data: {
+    id: string;
+    type: WegasEvent['@class'];
+  }) => createAction(ActionType.EDITOR_REMOVE_EVENT_HANDLER, data),
   EDITOR_SET_CLIENT_METHOD: (data: ClientMethodPayload) =>
     createAction(ActionType.EDITOR_SET_CLIENT_METHOD, data),
-  EDITOR_REGISTER_SERVER_METHOD: (data: ServerMethodPayload) =>
-    createAction(ActionType.EDITOR_REGISTER_SERVER_METHOD, data),
+  EDITOR_REGISTER_SERVER_GLOBAL_METHOD: (data: ServerGlobalMethodPayload) =>
+    createAction(ActionType.EDITOR_REGISTER_SERVER_GLOBAL_METHOD, data),
+  EDITOR_REGISTER_SERVER_VARIABLE_METHOD: (data: ServerVariableMethodPayload) =>
+    createAction(ActionType.EDITOR_REGISTER_SERVER_VARIABLE_METHOD, data),
   EDITOR_SET_VARIABLE_SCHEMA: (data: {
     name: string;
     schemaFN?: CustomSchemaFN;
     simpleFilter?: WegasClassNames;
   }) => createAction(ActionType.EDITOR_SET_VARIABLE_SCHEMA, data),
+  EDITOR_REGISTER_PAGE_LOADER: (data: { name: string; pageId: IScript }) =>
+    createAction(ActionType.EDITOR_REGISTER_PAGE_LOADER, data),
+  EDITOR_RESET_PAGE_LOADER: () =>
+    createAction(ActionType.EDITOR_RESET_PAGE_LOADER, {}),
+  EDITOR_UNREGISTER_PAGE_LOADER: (data: { name: string }) =>
+    createAction(ActionType.EDITOR_UNREGISTER_PAGE_LOADER, data),
   // EDITOR_SET_VARIABLE_METHOD: (data: ClientMethodPayload) =>
   // createAction(ActionType.EDITOR_SET_SERVER_METHOD, data),
   VARIABLE_EDIT: variableEditAction(ActionType.VARIABLE_EDIT),
   FSM_EDIT: variableEditAction(ActionType.FSM_EDIT),
   FILE_EDIT: (data: {
     entity: IAbstractContentDescriptor;
-    cb: (newEntity: IAbstractContentDescriptor) => void;
+    cb?: (newEntity: IAbstractContentDescriptor) => void;
   }) => createAction(ActionType.FILE_EDIT, data),
   VARIABLE_CREATE: <T extends IAbstractEntity>(data: {
-    '@class': string;
+    '@class': IAbstractEntity['@class'];
     parentId?: number;
     parentType?: string;
     actions: {
@@ -80,18 +115,21 @@ export const ActionCreator = {
       [K in keyof NormalizedData]: { [id: string]: IAbstractEntity };
     };
     updatedEntities: NormalizedData;
-    events: WegasEvents[];
+    events: WegasEvent[];
   }) => createAction(ActionType.MANAGED_RESPONSE_ACTION, data),
-  PAGE_EDIT_MODE: (data: boolean) =>
-    createAction(ActionType.PAGE_EDIT_MODE, data),
-  PAGE_LOAD_ID: (data?: string) => createAction(ActionType.PAGE_LOAD_ID, data),
-  PAGE_INDEX: (data: PageIndex) => createAction(ActionType.PAGE_INDEX, data),
-  PAGE_SRC_MODE: (data: boolean) =>
-    createAction(ActionType.PAGE_SRC_MODE, data),
-  PAGE_EDIT: (data: { page: string; path: string[] }) =>
-    createAction(ActionType.PAGE_EDIT, data),
+  // PAGE_EDIT_MODE: (data: boolean) =>
+  //   createAction(ActionType.PAGE_EDIT_MODE, data),
+  // PAGE_LOAD_ID: (data?: string) => createAction(ActionType.PAGE_LOAD_ID, data),
+  PAGE_INDEX: (data: { index: PageIndex }) =>
+    createAction(ActionType.PAGE_INDEX, data),
+  // PAGE_SRC_MODE: (data: boolean) =>
+  //   createAction(ActionType.PAGE_SRC_MODE, data),
+  // PAGE_EDIT: (data: { page: string; path: string[] }) =>
+  //   createAction(ActionType.PAGE_EDIT, data),
   PAGE_FETCH: (data: { pages: Pages }) =>
     createAction(ActionType.PAGE_FETCH, data),
+  PAGE_ERROR: (data: { error: string }) =>
+    createAction(ActionType.PAGE_ERROR, data),
   SEARCH_CLEAR: () => createAction(ActionType.SEARCH_CLEAR, {}),
   SEARCH_ONGOING: () => createAction(ActionType.SEARCH_ONGOING, {}),
   SEARCH_GLOBAL: (data: { search: string; result: number[] }) =>
@@ -110,6 +148,8 @@ export const ActionCreator = {
     createAction(ActionType.TEAM_FETCH_ALL, data),
   GAME_FETCH: (data: { game: IGame }) =>
     createAction(ActionType.GAME_FETCH, data),
+  LOCK_SET: (data: { token: string; locked: boolean }) =>
+    createAction(ActionType.LOCK_SET, data),
 };
 
 export type StateActions<
@@ -129,15 +169,19 @@ export const closeEditorWhenDeletedVariable = (
   Object.keys(deletedVariables).includes(String(editing.entity.id)) &&
   dispatch(closeEditor());
 
+export function triggerEventHandlers(event: WegasEvent) {
+  Object.values(store.getState().global.eventsHandlers[event['@class']]).map(
+    handler => {
+      handler(event);
+    },
+  );
+}
+
 export function manageResponseHandler(
   payload: IManagedResponse,
   localDispatch?: StoreDispatch,
   localState?: EditingState,
-  cb?: (payload: {
-    updatedEntities: NormalizedData;
-    deletedEntities: NormalizedData;
-    events: WegasEvents[];
-  }) => void,
+  selectUpdatedEntity: boolean = true,
 ) {
   const deletedEntities = normalizeDatas(payload.deletedEntities);
   if (localDispatch && localState) {
@@ -162,6 +206,7 @@ export function manageResponseHandler(
           discriminant(currentEditingEntity) as keyof NormalizedData
         ][currentEditingEntity.id];
       if (
+        selectUpdatedEntity &&
         updatedEntity &&
         shallowDifferent(updatedEntity, currentEditingEntity)
       ) {
@@ -178,20 +223,30 @@ export function manageResponseHandler(
       }
     }
   }
-  const managedValues = {
+
+  const managedValuesOnly = {
     deletedEntities,
     updatedEntities,
-    events: payload.events,
+    events: [],
   };
-  cb && cb(managedValues);
 
-  const managedResponcePayload = ActionCreator.MANAGED_RESPONSE_ACTION(
-    managedValues,
-  );
-  localDispatch && localDispatch(managedResponcePayload);
+  const managedValues = {
+    ...managedValuesOnly,
+    events:
+      payload.events?.map(event => {
+        const timedEvent: WegasEvent = {
+          ...event,
+          timestamp: new Date().getTime(),
+          unread: true,
+        };
+        triggerEventHandlers(timedEvent);
 
-  // TODO : Event should be filtered here and global event should be kept in the global response
-  const globalResponse = managedResponcePayload;
-  globalResponse.payload.events = [];
-  return globalResponse;
+        return timedEvent;
+      }) || [],
+  };
+
+  localDispatch &&
+    localDispatch(ActionCreator.MANAGED_RESPONSE_ACTION(managedValues));
+
+  return ActionCreator.MANAGED_RESPONSE_ACTION(managedValuesOnly);
 }

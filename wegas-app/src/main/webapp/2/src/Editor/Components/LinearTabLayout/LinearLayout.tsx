@@ -6,29 +6,52 @@ import { omit } from 'lodash';
 import u from 'immer';
 import { ReparentableRoot } from '../Reparentable';
 import { DnDTabLayout, ComponentMap, filterMap } from './DnDTabLayout';
-import { wlog } from '../../../Helper/wegaslog';
+import { wlog, wwarn } from '../../../Helper/wegaslog';
 
 import 'react-reflex/styles.css';
-import { flex, noOverflow, grow } from '../../../css/classes';
-import { themeVar } from '../../../Components/Theme';
-import { availableLayoutTabs } from '../Layout';
+import { flex, noOverflow, grow, expandHeight } from '../../../css/classes';
+import { themeVar } from '../../../Components/Style/ThemeVars';
 
 export const splitter = css({
   '&.reflex-container > .reflex-splitter': {
-    backgroundColor: themeVar.primaryLighterColor,
+    backgroundColor: themeVar.Common.colors.PrimaryColor,
     zIndex: 0,
+  },
+  '&.reflex-container > .reflex-splitter:hover': {
+    backgroundColor: themeVar.Common.colors.PrimaryColor,
   },
   '&.reflex-container.vertical > .reflex-splitter': {
     width: '5px',
+    borderLeft: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
+    borderRight: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
   },
   '&.reflex-container.horizontal > .reflex-splitter': {
     height: '5px',
+    borderTop: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
+    borderBottom: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
+  },
+  '&.reflex-container.vertical > .reflex-splitter:hover': {
+    borderLeft: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
+    borderRight: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
+  },
+  '&.reflex-container.horizontal > .reflex-splitter:hover': {
+    borderTop: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
+    borderBottom: `solid 2px ${themeVar.Common.colors.BackgroundColor}`,
   },
 });
 
-export const focusTabContext = React.createContext<
-  (id: keyof typeof availableLayoutTabs) => void
->(() => {});
+/**
+ * Store all the TabLayouts in there
+ */
+const tabLayouts: { [tabLayoutId: string]: (tabId: string) => void } = {};
+
+export function focusTab(tabLayoutId: string, tabId: string) {
+  if (tabLayouts[tabLayoutId]) {
+    tabLayouts[tabLayoutId](tabId);
+  } else {
+    wwarn(`No tab layout with id ${tabLayoutId} as been found!`);
+  }
+}
 
 type LayoutType = 'ReflexLayoutNode' | 'TabLayoutNode';
 
@@ -55,6 +78,12 @@ interface LayoutNode {
    * flex - the proportion of the layout
    */
   flex?: number;
+
+  /**
+   * flexValues - the flex values of the content
+   */
+  flexValues: number[];
+
   /**
    * defaultActive - the label of the active children
    */
@@ -332,6 +361,7 @@ const createLayout = (
     type: type,
     vertical: vertical,
     children: children,
+    flexValues: [],
   };
 
   return newLayouts;
@@ -390,12 +420,30 @@ const insertChildren = <T extends LayoutMap>(
   index?: number,
   active?: boolean,
 ) => {
-  const newLayouts = layouts;
-  const newIndex =
-    index !== undefined ? index : newLayouts[destLayoutKey].children.length;
-  newLayouts[destLayoutKey].children.splice(newIndex, 0, key);
-  if (active) {
-    newLayouts[destLayoutKey].defaultActive = key;
+  let newLayouts = layouts;
+  if (Object.keys(newLayouts).length === 0) {
+    newLayouts = ({
+      '0': {
+        type: 'ReflexLayoutNode',
+        children: ['1'],
+        vertical: false,
+        flexValues: [],
+      },
+      '1': {
+        type: 'TabLayoutNode',
+        vertical: false,
+        children: [key],
+        flexValues: [],
+        defaultActive: key,
+      },
+    } as unknown) as T;
+  } else {
+    const newIndex =
+      index !== undefined ? index : newLayouts[destLayoutKey].children.length;
+    newLayouts[destLayoutKey].children.splice(newIndex, 0, key);
+    if (active) {
+      newLayouts[destLayoutKey].defaultActive = key;
+    }
   }
   return newLayouts;
 };
@@ -472,26 +520,35 @@ interface ActionResize extends Action {
   flex?: number;
 }
 
+interface ActionFlexResize extends Action {
+  type: 'FLEX-RESIZE';
+  layoutKey: string;
+  flexValues: number[];
+}
+
 type TabLayoutsAction<T extends ComponentMap> =
   | ActionDrop<T>
   | ActionDelete<T>
   | ActionDropTab<T>
   | ActionSelect<T>
   | ActionExternalSelect<T>
-  | ActionResize;
+  | ActionResize
+  | ActionFlexResize;
 
 /**
  * setLayout is the reducer function for layout disposition management
  */
-const setLayout = <T extends ManagedLayoutMap>(
+const setLayout = (layoutAccept: string) => <T extends ManagedLayoutMap>(
   layouts: T,
   action: TabLayoutsAction<T['layoutMap']>,
 ) =>
   u(layouts, (layouts: ManagedLayoutMap) => {
     let newLayouts = layouts;
-    // If a layout has been resized, same it in the state
+    // If a layout has been resized, save it in the state
     if (action.type === 'RESIZE') {
       newLayouts.layoutMap[action.layoutKey].flex = action.flex;
+    } else if (action.type === 'FLEX-RESIZE') {
+      newLayouts.layoutMap[action.layoutKey].flexValues = action.flexValues;
     }
     // If new action, simply insert the new tab in the dest tabLayout
     else {
@@ -688,7 +745,7 @@ const setLayout = <T extends ManagedLayoutMap>(
     }
     // Saving layout in local storage
     window.localStorage.setItem(
-      'DnDGridLayoutData',
+      `DnDGridLayoutData.${layoutAccept}`,
       JSON.stringify(newLayouts),
     );
     return newLayouts;
@@ -697,7 +754,12 @@ const setLayout = <T extends ManagedLayoutMap>(
 const defaultLayout: ManagedLayoutMap = {
   lastKey: '0',
   layoutMap: {
-    '0': { type: 'ReflexLayoutNode', children: [], vertical: false },
+    '0': {
+      type: 'ReflexLayoutNode',
+      children: [],
+      vertical: false,
+      flexValues: [],
+    },
   },
   rootKey: '0',
 };
@@ -729,13 +791,13 @@ const reduceChildren = <T extends ComponentMap>(
   return newLayoutMap;
 };
 
-const layoutTabMissing = (layout: LayoutMap | null, tabs: ComponentMap) =>
-  !layout ||
-  Object.values(layout).some(
-    item =>
-      item.type === 'TabLayoutNode' &&
-      item.children.some(c => !Object.keys(tabs).includes(c)),
-  );
+// const layoutTabMissing = (layout: LayoutMap | null, tabs: ComponentMap) =>
+//   !layout ||
+//   Object.values(layout).some(
+//     item =>
+//       item.type === 'TabLayoutNode' &&
+//       item.children.some(c => !Object.keys(tabs).includes(c)),
+//   );
 
 // eslint-disable-next-line
 interface LayoutItem<T extends ComponentMap>
@@ -748,26 +810,41 @@ interface LinearLayoutProps<T extends ComponentMap> {
    */
   tabs: T;
   /**
-   * layout - the layout initial disposition
+   * initialLayout - the layout initial disposition
    * If a layout is saved in the browser, this won't be taken in account unless the saved layout is reset
    */
-  layout?: LayoutItems<T>;
+  initialLayout?: LayoutItems<T>;
+  /**
+   * layoutId - The token that filter the drop actions
+   */
+  layoutId: string;
+  /**
+   * onFocusTab - Allows to pass back the focusTab function without using a context
+   */
+  onFocusTab?: (focusTab: (tabId: string, layoutId: string) => void) => void;
 }
 
 /**
  * MainLinearLayout is a component that allows to chose the position and size of its children
  */
-function MainLinearLayout<T extends ComponentMap>(props: LinearLayoutProps<T>) {
-  const tabs = React.useRef<ComponentMap>(props.tabs ? props.tabs : {});
-  const savedLayoutJSON = window.localStorage.getItem('DnDGridLayoutData');
+export function MainLinearLayout<T extends ComponentMap>({
+  layoutId,
+  initialLayout,
+  tabs,
+  onFocusTab,
+}: LinearLayoutProps<T>) {
+  // const tabs = React.useRef<ComponentMap>(tabs ? tabs : {});
+  const savedLayoutJSON = window.localStorage.getItem(
+    `DnDGridLayoutData.${layoutId}`,
+  );
   const savedLayout = savedLayoutJSON
     ? (JSON.parse(savedLayoutJSON) as ManagedLayoutMap)
     : null;
   const [layout, dispatchLayout] = React.useReducer(
-    setLayout,
-    savedLayout && !layoutTabMissing(savedLayout.layoutMap, tabs.current)
+    setLayout(layoutId),
+    savedLayout /*&& !layoutTabMissing(savedLayout.layoutMap, tabs)*/
       ? savedLayout
-      : reduceChildren(props.layout),
+      : reduceChildren(initialLayout),
   );
 
   const onDrop = (layoutKey: string) => (type: DropActionType) => (item: {
@@ -798,18 +875,28 @@ function MainLinearLayout<T extends ComponentMap>(props: LinearLayoutProps<T>) {
       tabKey: tabkey,
     });
 
-  const onNewTab = (layoutKey: string) => (tabKey: string) =>
+  const onNewTab = (layoutKey: string) => (tabKey: string) => {
     dispatchLayout({
       type: 'NEW',
       tabKey: tabKey,
       destTabLayoutKey: layoutKey,
     });
-
+  };
   const onSelect = (tabKey: string) =>
     dispatchLayout({
       type: 'SELECT',
       tabKey: tabKey,
     });
+
+  const focusTab = React.useCallback((tabId: string) => {
+    dispatchLayout({ type: 'EXTERNALSELECT', tabKey: tabId });
+  }, []);
+
+  tabLayouts[layoutId] = focusTab;
+
+  React.useEffect(() => {
+    onFocusTab && onFocusTab(focusTab);
+  }, [onFocusTab, focusTab]);
 
   /**
    * renderLayouts is a recursvie function that renders the linearLayout.
@@ -827,8 +914,8 @@ function MainLinearLayout<T extends ComponentMap>(props: LinearLayoutProps<T>) {
           return (
             <DnDTabLayout
               key={currentLayoutKey}
-              components={makeTabMap(currentLayout.children, tabs.current)}
-              selectItems={getUnusedTabs(layout.layoutMap, tabs.current)}
+              components={makeTabMap(currentLayout.children, tabs)}
+              selectItems={getUnusedTabs(layout.layoutMap, tabs)}
               vertical={currentLayout.vertical}
               onDrop={onDrop(currentLayoutKey)}
               onDropTab={onDropTab(currentLayoutKey)}
@@ -836,6 +923,7 @@ function MainLinearLayout<T extends ComponentMap>(props: LinearLayoutProps<T>) {
               onNewTab={onNewTab(currentLayoutKey)}
               defaultActiveLabel={currentLayout.defaultActive}
               onSelect={onSelect}
+              layoutId={layoutId}
             />
           );
         }
@@ -847,7 +935,7 @@ function MainLinearLayout<T extends ComponentMap>(props: LinearLayoutProps<T>) {
               <ReflexElement
                 key={childKey}
                 flex={
-                  layout.layoutMap[childKey].flex
+                  layout.layoutMap[childKey]?.flex
                     ? layout.layoutMap[childKey].flex
                     : 1000
                 }
@@ -874,23 +962,42 @@ function MainLinearLayout<T extends ComponentMap>(props: LinearLayoutProps<T>) {
               // Orientation is inverted to keep same logic in TabLayoutNode and ReflexLayoutNode (vertical==true : v, vertical==false : >)
               orientation={currentLayout.vertical ? 'horizontal' : 'vertical'}
             >
-              {rendered}
+              {rendered.length === 0 ? (
+                <ReflexElement>
+                  <div>Loading...</div>
+                </ReflexElement>
+              ) : (
+                rendered
+              )}
             </ReflexContainer>
           );
         }
       }
+    } else {
+      return (
+        <ReflexContainer>
+          <ReflexElement>
+            <DnDTabLayout
+              key={currentLayoutKey}
+              components={makeTabMap([], tabs)}
+              selectItems={getUnusedTabs(layout.layoutMap, tabs)}
+              onDrop={onDrop(currentLayoutKey)}
+              onDropTab={onDropTab(currentLayoutKey)}
+              onDeleteTab={onDeleteTab}
+              onNewTab={onNewTab(currentLayoutKey)}
+              onSelect={onSelect}
+              layoutId={layoutId}
+            />
+          </ReflexElement>
+        </ReflexContainer>
+      );
     }
   };
+
   return (
-    <focusTabContext.Provider
-      value={(id: keyof typeof availableLayoutTabs) => {
-        dispatchLayout({ type: 'EXTERNALSELECT', tabKey: id });
-      }}
-    >
-      <ReparentableRoot>
-        <div className={cx(flex, grow)}>{renderLayouts()}</div>
-      </ReparentableRoot>
-    </focusTabContext.Provider>
+    <ReparentableRoot>
+      <div className={cx(flex, grow, expandHeight)}>{renderLayouts()}</div>
+    </ReparentableRoot>
   );
 }
 

@@ -2,22 +2,28 @@ import * as React from 'react';
 import {
   registerComponent,
   pageComponentFactory,
-  PageComponentMandatoryProps,
 } from '../tools/componentFactory';
 import { schemaProps } from '../tools/schemaProps';
 import {
   NumberSlider,
   DisplayMode,
   displayModes,
-} from '../../Inputs/Button/NumberSlider';
-import { useVariableInstance } from '../../Hooks/useVariable';
-import { store } from '../../../data/store';
-import { Interpolation } from 'emotion';
+} from '../../Inputs/Number/NumberSlider';
+import { store } from '../../../data/Stores/store';
 import { Actions } from '../../../data';
-import { omit } from 'lodash';
-import { useScript } from '../../Hooks/useScript';
+import { WegasComponentProps } from '../tools/EditableComponent';
+import { INumberDescriptor, IScript } from 'wegas-ts-api';
+import { createFindVariableScript } from '../../../Helper/wegasEntites';
+import { classStyleIdShema } from '../tools/options';
+import {
+  OnVariableChange,
+  onVariableChangeSchema,
+  useOnVariableChange,
+} from './tools';
+import { TumbleLoader } from '../../Loader';
+import { useComponentScript } from '../../Hooks/useComponentScript';
 
-interface PlayerNumberSliderProps extends PageComponentMandatoryProps {
+interface PlayerNumberSliderProps extends WegasComponentProps {
   /**
    * script - the script that returns the variable to display and modify
    */
@@ -35,79 +41,81 @@ interface PlayerNumberSliderProps extends PageComponentMandatoryProps {
    * disabled - set the component in disabled mode
    */
   disabled?: boolean;
-  /**
-   * trackStyle - the style of the track
-   */
-  trackStyle?: Interpolation;
-  /**
-   * activePartStyle - the style of the left part of the track
-   */
-  activePartStyle?: Interpolation;
-  /**
-   * handleStyle - the style of the slider handle
-   */
-  handleStyle?: Interpolation;
-  /**
-   * disabledStyle - the style of the slider in disabled mode
-   */
-  disabledStyle?: Interpolation;
+  onVariableChange?: OnVariableChange;
 }
 
-function PlayerNumberSlider(props: PlayerNumberSliderProps) {
-  const { script, EditHandle } = props;
-  const content = script ? script.content : '';
-  const descriptor = useScript(content) as INumberDescriptor;
-  const instance = useVariableInstance(descriptor);
-  if (content === '' || descriptor === undefined || instance === undefined) {
-    return (
-      <>
-        <EditHandle />
-        <pre>Not found: {script}</pre>
-      </>
-    );
-  }
+function PlayerNumberSlider({
+  script,
+  context,
+  className,
+  style,
+  id,
+  onVariableChange,
+  ...restProps
+}: PlayerNumberSliderProps) {
+  // const number = useScript<SNumberDescriptor>(script, context);
+  // const player = useCurrentPlayer();
 
-  const min = descriptor.minValue || 0;
-  const max = descriptor.maxValue || 1;
+  const {
+    descriptor,
+    instance,
+    notFound,
+  } = useComponentScript<INumberDescriptor>(script, context);
 
-  return (
-    <>
-      <EditHandle />
-      <NumberSlider
-        value={instance.value}
-        onChange={v =>
-          store.dispatch(
-            Actions.VariableInstanceActions.runScript(
-              `${script}.setValue(self, ${v});`,
-            ),
-          )
+  const { handleOnChange } = useOnVariableChange(onVariableChange, context);
+
+  return notFound ? (
+    <TumbleLoader />
+  ) : (
+    <NumberSlider
+      {...restProps}
+      className={className}
+      style={style}
+      id={id}
+      value={instance?.getValue()}
+      onChange={(v, i) => {
+        if (i === 'DragEnd') {
+          if (handleOnChange) {
+            handleOnChange(v);
+          } else {
+            store.dispatch(
+              Actions.VariableInstanceActions.runScript(
+                `Variable.find(gameModel,"${descriptor?.getName()}").setValue(self, ${v});`,
+              ),
+            );
+          }
         }
-        min={min}
-        max={max}
-        {...omit(props, ['variable', 'min', 'max', 'path', 'children'])}
-      />
-    </>
+      }}
+      min={descriptor?.getMinValue() || 0}
+      max={descriptor?.getMaxValue() || 1}
+    />
   );
 }
 
 registerComponent(
-  pageComponentFactory(
-    PlayerNumberSlider,
-    'NumberSlider',
-    'sliders-h',
-    {
-      script: schemaProps.scriptVariable('Variable', true, [
-        'NumberDescriptor',
-      ]),
-      steps: schemaProps.number('Steps', false),
-      displayValues: schemaProps.select('Display value', false, displayModes),
-      disabled: schemaProps.boolean('Disabled', false),
-      trackStyle: schemaProps.code('Track style', false, 'JSON'),
-      activePartStyle: schemaProps.code('Active part style', false, 'JSON'),
-      handleStyle: schemaProps.code('Handle style', false, 'JSON'),
-      disabledStyle: schemaProps.code('Disabled style', false, 'JSON'),
+  pageComponentFactory({
+    component: PlayerNumberSlider,
+    componentType: 'Input',
+    name: 'NumberSlider',
+    icon: 'sliders-h',
+    schema: {
+      script: schemaProps.scriptVariable({
+        label: 'Variable',
+        required: true,
+        returnType: ['SNumberDescriptor'],
+      }),
+      steps: schemaProps.number({ label: 'Steps' }),
+      displayValues: schemaProps.select({
+        label: 'Display value',
+        values: displayModes,
+      }),
+      disabled: schemaProps.boolean({ label: 'Disabled' }),
+      onVariableChange: onVariableChangeSchema('On number change action'),
+      ...classStyleIdShema,
     },
-    [],
-    () => ({}),
-  ),
+    allowedVariables: ['NumberDescriptor'],
+    getComputedPropsFromVariable: v => ({
+      script: createFindVariableScript(v),
+    }),
+  }),
 );

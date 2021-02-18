@@ -1,35 +1,46 @@
-/*
+/**
  * Wegas
  * http://wegas.albasim.ch
  *
- * Copyright (c) 2013-2018 School of Business and Engineering Vaud, Comem, MEI
+ * Copyright (c) 2013-2021 School of Management and Engineering Vaud, Comem, MEI
  * Licensed under the MIT License
  */
 package com.wegas.survey.persistence.input;
 
+import ch.albasim.wegas.annotations.Scriptable;
 import ch.albasim.wegas.annotations.View;
 import ch.albasim.wegas.annotations.WegasEntityProperty;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.fasterxml.jackson.annotation.JsonView;
+import com.wegas.core.Helper;
 import com.wegas.core.i18n.persistence.TranslatableContent;
+import com.wegas.core.persistence.EntityComparators;
 import com.wegas.core.persistence.WithPermission;
 import com.wegas.core.persistence.game.GameModel;
+import com.wegas.core.persistence.game.Player;
 import com.wegas.core.persistence.variable.DescriptorListI;
 import com.wegas.core.persistence.variable.ListDescriptor;
 import com.wegas.core.persistence.variable.VariableDescriptor;
 import com.wegas.core.rest.util.Views;
 import com.wegas.core.security.util.WegasPermission;
 import com.wegas.editor.ValueGenerators;
-import com.wegas.editor.View.Hidden;
-import com.wegas.editor.View.I18nHtmlView;
+import com.wegas.editor.view.Hidden;
+import com.wegas.editor.view.I18nHtmlView;
 import com.wegas.mcq.persistence.wh.WhQuestionDescriptor;
 import com.wegas.survey.persistence.SurveyDescriptor;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import javax.persistence.*;
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.Index;
+import javax.persistence.ManyToOne;
+import javax.persistence.OneToMany;
+import javax.persistence.OneToOne;
+import javax.persistence.Table;
 import javax.validation.constraints.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,13 +54,13 @@ import org.slf4j.LoggerFactory;
  */
 @Entity
 @Table(
-        indexes = {
-            @Index(columnList = "survey_id"),
-            @Index(columnList = "description_id")
-        }
+    indexes = {
+        @Index(columnList = "survey_id"),
+        @Index(columnList = "description_id")
+    }
 )
 public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionInstance>
-        implements DescriptorListI<SurveyInputDescriptor> {
+    implements DescriptorListI<SurveyInputDescriptor> {
 
     private static final long serialVersionUID = 1L;
 
@@ -60,41 +71,30 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
      */
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @WegasEntityProperty(
-            optional = false, nullable = false, proposal = ValueGenerators.EmptyI18n.class,
-            view = @View(
-                    label = "Description",
-                    value = I18nHtmlView.class
-            ))
+        optional = false, nullable = false, proposal = ValueGenerators.EmptyI18n.class,
+        view = @View(
+            label = "Description",
+            value = I18nHtmlView.class
+        ))
     private TranslatableContent description;
 
-    /**
-     * to order sections
-     */
-    @WegasEntityProperty(
-            optional = false, nullable = false, proposal = ValueGenerators.One.class,
-            view = @View(label = "Index"))
-    private Integer index;
-
-    
     /**
      * The enclosing survey
      */
     //@JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
-    @JsonBackReference(value="survey-sections")
+    @JsonBackReference(value = "survey-sections")
     private SurveyDescriptor survey;
 
-    
     /**
      * List of questions/inputs of this section
      */
     @OneToMany(mappedBy = "section", cascade = {CascadeType.ALL})
-    @OrderColumn(name = "index")
-    @JsonManagedReference(value="input-section")
+    @JsonManagedReference(value = "input-section")
     //@JsonView(Views.EditorI.class)
     @WegasEntityProperty(
-            includeByDefault = false,
-            view = @View(value = Hidden.class, label = "Items"), notSerialized = true)
+        includeByDefault = false,
+        view = @View(value = Hidden.class, label = "Items"), notSerialized = true)
     @NotNull
     //@JsonIgnore
     private List<SurveyInputDescriptor> items = new ArrayList<>();
@@ -103,7 +103,7 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
      * Empty constructor
      */
     public SurveySectionDescriptor() {
-
+        // ensure there is an empty constructor
     }
 
     /**
@@ -113,26 +113,25 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
      */
     @Override
     @JsonView(Views.ExportI.class)
+    @Scriptable(label = "getItems", wysiwyg = false)
     public List<SurveyInputDescriptor> getItems() {
-        return this.items;
+        return Helper.copyAndSortModifiable(this.items, new EntityComparators.OrderComparator<>());
     }
 
-    public void setItems(List<SurveyInputDescriptor> items) {
-        this.items = items;
-        for (SurveyInputDescriptor sid : items) {
-            sid.setSection(this);
+    @JsonIgnore
+    @Override
+    public List<SurveyInputDescriptor> getRawItems() {
+        return items;
+    }
+
+    @Override
+    public void setGameModel(GameModel gm) {
+        super.setGameModel(gm);
+        for (SurveyInputDescriptor ssd : this.getRawItems()) {
+            ssd.setGameModel(gm);
         }
     }
 
-    public int getIndex() {
-        return index != null ? index : 0;
-    }
-
-    public void setIndex(int index) {
-        this.index = index;
-    }
-
-    
     public TranslatableContent getDescription() {
         return description;
     }
@@ -147,7 +146,7 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
     public SurveyDescriptor getSurvey() {
         return survey;
     }
-    
+
     //@JsonBackReference
     public void setSurvey(SurveyDescriptor survey) {
         this.survey = survey;
@@ -161,7 +160,6 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
         }
     }
 
-    
     @JsonIgnore
     @Override
     public DescriptorListI<? extends VariableDescriptor> getParentOrNull() {
@@ -201,14 +199,12 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
     public SurveyDescriptor getParent() {
         return survey;
     }
-    */
-
+     */
     @Override
     public WithPermission getMergeableParent() {
         return this.getSurvey();
     }
 
-    
     @Override
     public Collection<WegasPermission> getRequieredUpdatePermission() {
         return this.getSurvey().getRequieredUpdatePermission();
@@ -218,8 +214,7 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
     public Collection<WegasPermission> getRequieredReadPermission() {
         return this.getSurvey().getRequieredReadPermission();
     }
-    
-    
+
     @Override
     public void setRoot(GameModel rootGameModel) {
         super.setRoot(rootGameModel);
@@ -245,30 +240,45 @@ public class SurveySectionDescriptor extends VariableDescriptor<SurveySectionIns
         }
     }
 
-    /*
-    public static class SurveySectionDescriptorMergeCallback implements WegasCallback {
-
-        @Override
-        public void postUpdate(IMergeable entity, Object ref, Object identifier) {
-            if (entity instanceof SurveySectionDescriptor) {
-                SurveySectionDescriptor ssd = (SurveySectionDescriptor) entity;
-                // set names and labels unique
-                Helper.setNameAndLabelForLabelledEntityList(ssd.getItems(), "items", ssd.getGameModel());
-            }
-        }
-
+    // ~~~~~~ Sugar for scripts ~~~~~~~~
+    /**
+     *
+     * @param p
+     */
+    @Scriptable
+    public void activate(Player p) {
+        this.getInstance(p).setActive(true);
     }
 
-    public static class SurveyInputMergeCallback implements WegasCallback {
-
-        @Override
-        public Object remove(Object entity, IMergeable container, Object identifier) {
-            if (entity instanceof SurveyInputDescriptor) {
-                SurveyInputDescriptor inputToRemove = (SurveyInputDescriptor) entity;
-                inputToRemove.updateCacheOnDelete(inputToRemove.getSection().beans);
-            }
-            return null;
-        }
+    /**
+     *
+     * @param p
+     */
+    @Scriptable
+    public void deactivate(Player p) {
+        this.getInstance(p).setActive(false);
     }
-    */
+
+    /**
+     *
+     * @param p
+     *
+     * @return true if the player's survey is active
+     */
+    @Scriptable(label = "is active")
+    public boolean isActive(Player p) {
+        return this.getInstance(p).getActive();
+    }
+
+    /**
+     * {@link #isActive ...}
+     *
+     * @param p
+     *
+     * @return true if the player's survey is not active
+     */
+    @Scriptable(label = "is not active")
+    public boolean isNotActive(Player p) {
+        return this.getInstance(p).getActive() == false;
+    }
 }

@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { TabLayout } from '../../../Components/Tabs';
 import { Toolbar } from '../../../Components/Toolbar';
-import { IconButton } from '../../../Components/Inputs/Button/IconButton';
 import {
   LibraryAPI,
   NewLibErrors,
@@ -15,14 +14,19 @@ import { WebSocketEvent, useWebsocket } from '../../../API/websocket';
 import SrcEditor, { SrcEditorProps } from './SrcEditor';
 import MergeEditor from './MergeEditor';
 import { TextPrompt } from '../TextPrompt';
-import { ConfirmButton } from '../../../Components/Inputs/Button/ConfirmButton';
+import { ConfirmButton } from '../../../Components/Inputs/Buttons/ConfirmButton';
 import { WegasScriptEditor } from './WegasScriptEditor';
 import {
   clientScriptEval,
-  useGlobals,
+  setGlobals,
+  useGlobalContexts,
 } from '../../../Components/Hooks/useScript';
-import { Menu } from '../../../Components/Menu';
+import { DropMenu } from '../../../Components/DropMenu';
 import { MessageString } from '../MessageString';
+import { IAbstractContentDescriptor, IGameModelContent } from 'wegas-ts-api';
+import { Button } from '../../../Components/Inputs/Buttons/Button';
+import { librariesCTX } from '../LibrariesLoader';
+import { store } from '../../../data/Stores/store';
 
 type IVisibility = IAbstractContentDescriptor['visibility'];
 const visibilities: IVisibility[] = [
@@ -269,15 +273,18 @@ const getScriptLanguage: (
  *
  * @param libraryEntry - the library to check
  */
-const isLibraryOutdated = (
-  libraryEntry: ILibraryWithStatus,
+function isLibraryOutdated(
+  libraryEntry: ILibraryWithStatus | undefined,
 ): libraryEntry is ILibraryWithStatus & {
   status: {
     latestVersionLibrary: IGameModelContent;
   };
-} => {
-  return libraryEntry.status.latestVersionLibrary !== undefined;
-};
+} {
+  return (
+    libraryEntry != null &&
+    libraryEntry.status.latestVersionLibrary !== undefined
+  );
+}
 
 /**
  * isVisibilityAllowed is a function that tells if a visibility can be sat to the current library
@@ -388,10 +395,12 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
   const [modalState, setModalState] = React.useState<ModalState>({
     type: 'close',
   });
-  const libEntry = librariesState.libraries[librariesState.selected];
+  const libEntry = librariesState.libraries[librariesState.selected] as
+    | ILibraryWithStatus
+    | undefined;
 
-  // Allows to load the globals in the script evaluator
-  useGlobals();
+  const { updateCSSLibraries } = React.useContext(librariesCTX);
+  const globalContexts = useGlobalContexts();
 
   /**
    * A callback for websocket event management
@@ -469,7 +478,7 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
    * @param content - the content of the library
    */
   const onSaveLibrary = React.useCallback(() => {
-    if (isEditAllowed(librariesState)) {
+    if (isEditAllowed(librariesState) && libEntry != null) {
       LibraryAPI.saveLibrary(
         scriptType,
         librariesState.selected,
@@ -481,6 +490,7 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
           });
           if (scriptType === 'ClientScript') {
             try {
+              setGlobals(globalContexts, store.getState());
               clientScriptEval(libEntry.library.content);
             } catch (e) {
               setModalState({
@@ -489,6 +499,8 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
                   'The library has been saved but the script contains errors',
               });
             }
+          } else if (scriptType === 'CSS') {
+            updateCSSLibraries(librariesState.selected);
           }
         })
         .catch(() => {
@@ -498,7 +510,13 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
           });
         });
     }
-  }, [librariesState, scriptType, libEntry]);
+  }, [
+    librariesState,
+    scriptType,
+    libEntry,
+    globalContexts,
+    updateCSSLibraries,
+  ]);
 
   /**
    * onDeleteLibrary deletes the selected library in the database
@@ -537,14 +555,19 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
       });
   }, [scriptType]);
 
-  const CurrentEditor = React.useCallback(
-    (props: SrcEditorProps) =>
-      getScriptLanguage(scriptType) === 'typescript' ? (
-        <WegasScriptEditor {...props} clientScript />
-      ) : (
-        <SrcEditor {...props} />
-      ),
-    [scriptType],
+  const editorProps: SrcEditorProps = React.useMemo(
+    () => ({
+      value: librariesState.selected ? libEntry?.library.content || '' : '',
+      onChange: (content: string) =>
+        dispatchStateAction({
+          type: 'SetLibraryContent',
+          content: content,
+        }),
+      language: getScriptLanguage(scriptType),
+      readOnly: !isEditAllowed(librariesState),
+      onSave: onSaveLibrary,
+    }),
+    [libEntry, librariesState, onSaveLibrary, scriptType],
   );
 
   return (
@@ -571,7 +594,7 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
             applyOnEnter
           />
         ) : (
-          <IconButton
+          <Button
             icon="plus"
             tooltip="Add a new script"
             onClick={() => {
@@ -581,7 +604,7 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
         )}
         {librariesState.selected && (
           <>
-            <Menu
+            <DropMenu
               label={
                 librariesState.selected
                   ? librariesState.selected
@@ -589,36 +612,36 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
               }
               items={Object.keys(librariesState.libraries).map(
                 (name: string) => ({
-                  id: name,
+                  value: name,
                   label: name,
                 }),
               )}
-              onSelect={({ id }) =>
+              onSelect={({ value }) =>
                 dispatchStateAction({
                   type: 'SelectLibrary',
-                  name: id,
+                  name: value,
                 })
               }
             />
-            <Menu
+            <DropMenu
               label={getLibraryVisibility(librariesState)}
               items={visibilities
                 .filter(v => isVisibilityAllowed(librariesState, v))
                 .map(v => ({
-                  id: v,
+                  value: v,
                   label: v,
                 }))}
-              onSelect={({ id }) =>
+              onSelect={({ value }) =>
                 dispatchStateAction({
                   type: 'SetLibraryVisibility',
-                  visibility: id as IVisibility,
+                  visibility: value as IVisibility,
                 })
               }
             />
             {!isLibraryOutdated(libEntry) && (
               <>
                 {isEditAllowed(librariesState) && (
-                  <IconButton
+                  <Button
                     icon="save"
                     tooltip="Save the script"
                     onClick={onSaveLibrary}
@@ -634,20 +657,21 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
                 )}
               </>
             )}
-            {isLibraryOutdated(libEntry) ? (
-              <MessageString
-                type="error"
-                value="The script is dangeroulsy outdated!"
-              />
-            ) : libEntry.status.isEdited ? (
-              <MessageString type="warning" value="The script is not saved" />
-            ) : (
-              <MessageString
-                type="succes"
-                value="The script is saved"
-                duration={3000}
-              />
-            )}
+            {libEntry &&
+              (isLibraryOutdated(libEntry) ? (
+                <MessageString
+                  type="error"
+                  value="The script is dangeroulsy outdated!"
+                />
+              ) : libEntry.status.isEdited ? (
+                <MessageString type="warning" value="The script is not saved" />
+              ) : (
+                <MessageString
+                  type="succes"
+                  value="The script is saved"
+                  duration={3000}
+                />
+              ))}
             {(modalState.type === 'error' || modalState.type === 'warning') && (
               <MessageString
                 type={modalState.type}
@@ -674,18 +698,16 @@ function ScriptEditor({ scriptType }: ScriptEditorProps) {
             onResolved={onSaveLibrary}
           />
         ) : librariesState.selected ? (
-          <CurrentEditor
-            value={librariesState.selected ? libEntry.library.content : ''}
-            onChange={content =>
-              dispatchStateAction({
-                type: 'SetLibraryContent',
-                content: content,
-              })
-            }
-            language={getScriptLanguage(scriptType)}
-            readOnly={!isEditAllowed(librariesState)}
-            onSave={onSaveLibrary}
-          />
+          getScriptLanguage(scriptType) === 'typescript' ? (
+            <WegasScriptEditor
+              {...editorProps}
+              scriptContext={
+                scriptType === 'ServerScript' ? 'Server external' : 'Client'
+              }
+            />
+          ) : (
+            <SrcEditor {...editorProps} language="css" />
+          )
         ) : (
           <MessageString
             value="Please create a library by pressing the + button"

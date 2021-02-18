@@ -1,28 +1,32 @@
 import * as React from 'react';
-import { useScript } from '../Hooks/useScript';
-import { useVariableInstance } from '../Hooks/useVariable';
-import { TranslatableContent } from '../../data/i18n';
+import { useTranslate } from '../../Editor/Components/FormView/translatable';
+import { ITranslatableContent } from 'wegas-ts-api';
 
-export interface TextProps {
-  script?: IScript;
-  className?: string;
+interface TextProps extends ClassStyleId {
+  text?: string;
 }
 
-export function Text({ script, className }: TextProps) {
-  const textD = useScript(script ? script.content : '') as ISTextDescriptor;
-  const textI = useVariableInstance(textD);
-  return textD === undefined || textI === undefined ? (
-    <span>Not found: {script}</span>
-  ) : (
-    <div className={className}>
-      <div
-        style={{ display: 'inline-block' }}
-        dangerouslySetInnerHTML={{
-          __html: TranslatableContent.toString(
-            textI.trValue === undefined ? null : textI.trValue,
-          ),
-        }}
-      />
-    </div>
+export function Text({ text, style, className, id }: TextProps) {
+  return (
+    <div
+      id={id}
+      className={className}
+      style={style}
+      dangerouslySetInnerHTML={{
+        __html: text || '',
+      }}
+    />
   );
+}
+
+interface TranslatableTextProps extends ClassStyleId {
+  htmlTranslatableContent: ITranslatableContent;
+}
+
+export function TranslatableText({
+  htmlTranslatableContent,
+  ...props
+}: TranslatableTextProps) {
+  const translatedContent = useTranslate(htmlTranslatableContent);
+  return <Text {...props} text={translatedContent} />;
 }

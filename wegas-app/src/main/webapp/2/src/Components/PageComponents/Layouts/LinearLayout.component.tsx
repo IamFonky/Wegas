@@ -2,142 +2,161 @@ import * as React from 'react';
 import {
   pageComponentFactory,
   registerComponent,
-  PageComponentMandatoryProps,
 } from '../tools/componentFactory';
 import { schemaProps } from '../tools/schemaProps';
-import { pageCTX } from '../../../Editor/Components/Page/PageEditor';
-import { ReflexContainer, ReflexSplitter, ReflexElement } from 'react-reflex';
 import { splitter } from '../../../Editor/Components/LinearTabLayout/LinearLayout';
-import { cx, css } from 'emotion';
-import { layoutHighlightStyle, childHighlightCSS } from './List.component';
-import { flex, grow } from '../../../css/classes';
-import { OrientedLayoutProps } from '../../Layouts/List';
+import 'react-reflex/styles.css';
+import { pageCTX } from '../../../Editor/Components/Page/PageEditor';
+import {
+  ComponentDropZone,
+  useDndComponentDrop,
+  WegasComponentProps,
+} from '../tools/EditableComponent';
+import {
+  ChildrenDeserializerProps,
+  PageDeserializer,
+} from '../tools/PageDeserializer';
+import { classNameOrEmpty } from '../../../Helper/className';
+import { classStyleIdShema } from '../tools/options';
+import { ReflexContainer, ReflexElement, ReflexSplitter } from 'react-reflex';
+import { omit } from 'lodash-es';
+import { emptyLayoutItemStyle } from './FlexList.component';
 
-const componentType = 'LinearLayout';
+const CONTENT_TYPE = 'LinearLayout';
 
-type LinearLayoutProps = OrientedLayoutProps<WegasComponent> &
-  PageComponentMandatoryProps;
-
-interface PlayerLinearLayoutProps extends LinearLayoutProps {
-  /**
-   * keepSplitter - let the splitter for users to change the display
-   */
-  keepSplitter?: boolean;
-  /**
-   * flexValues - allows to fix a specific flex value for each element in the layout
-   */
-  flexValues?: { [containerId: string]: number };
+export interface PlayerLinearLayoutChildrenProps {
+  noSplitter?: boolean;
 }
 
-function PlayerLinearLayout(props: PlayerLinearLayoutProps) {
-  const { EditHandle, showBorders, path, keepSplitter } = props;
-  const { editMode, onUpdate } = React.useContext(pageCTX);
-  const children: JSX.Element[] = [];
+export interface PlayerLinearLayoutProps
+  extends WegasComponentProps,
+    PlayerLinearLayoutChildrenProps {
+  flexValues?: number[];
+  children: React.ReactNode[];
+}
 
-  const [showLayout, setShowLayout] = React.useState(
-    showBorders ? true : false,
+function PlayerLinearLayout({
+  vertical,
+  children,
+  className,
+  style,
+}: PlayerLinearLayoutProps) {
+  return (
+    <ReflexContainer
+      className={splitter + classNameOrEmpty(className)}
+      style={style}
+      orientation={vertical ? 'horizontal' : 'vertical'}
+    >
+      {children}
+    </ReflexContainer>
   );
+}
 
-  React.useEffect(() => {
-    if (showBorders !== undefined) {
-      setShowLayout(showBorders);
-    }
-  }, [showBorders]);
+function isVertical(props?: PlayerLinearLayoutProps) {
+  return props?.vertical === true;
+}
 
-  // The mapping is done outside from the return to avoid grouping ReflexSplitter and ReflexElement in fragment (avoid bug)
-  for (let i = 0; i < props.children.length; editMode ? (i += 2) : (i += 1)) {
-    if (
-      i > 0 &&
-      ((editMode && i !== props.children.length - 1) ||
-        (keepSplitter && !editMode))
-    ) {
-      children.push(
-        <ReflexSplitter key={`SPLITTER${i / (editMode ? 2 : 1)}`} />,
-      );
-    }
-    children.push(
-      <ReflexElement
-        key={`ELEMENT${i}`}
-        flex={
-          props.flexValues
-            ? props.flexValues[Math.floor(i / (editMode ? 2 : 1))]
-            : 1000
-        }
-        onStopResize={args => {
-          editMode &&
-            onUpdate(
-              {
-                type: componentType,
-                props: {
-                  flexValues: {
-                    ...(props.flexValues ? props.flexValues : {}),
-                    [Math.floor(i / 2)]: args.component.props.flex,
-                  },
-                },
-              },
-              path,
-              true,
-            );
-        }}
-        className={cx(showBorders && css(childHighlightCSS))}
-      >
-        {/* We need to group every 2 elements in edit mode because drop zones are added */}
-        {props.children[i]}
-        {editMode && props.children[i + 1]}
-        {editMode && i === props.children.length - 3 && props.children[i + 2]}
-      </ReflexElement>,
-    );
-    if (i === props.children.length - 3) {
-      i += 1;
-    }
-  }
+export function EmptyComponentContainer({ path }: { path: number[] }) {
+  const [{ isOver }, dropZone] = useDndComponentDrop();
+
+  const { onDrop } = React.useContext(pageCTX);
 
   return (
-    <div
-      className={cx(showLayout && layoutHighlightStyle, flex, grow)}
-      style={{ width: '100%' }}
-    >
-      <div
-        style={{
-          display: props.horizontal ? 'block' : 'inline-flex',
-          width: '100%',
-          height: '100%',
-        }}
-      >
-        <EditHandle
-          togglerProps={{
-            onClick: setShowLayout,
-            checked: showLayout,
-            hint: 'Highlight list borders (only during edition mode)',
+    <ReflexElement>
+      <div ref={dropZone} className={emptyLayoutItemStyle}>
+        <ComponentDropZone
+          onDrop={dndComponent => {
+            onDrop(dndComponent, path);
           }}
-          vertical={!props.horizontal}
+          show={isOver}
+          dropPosition="INTO"
         />
-        <ReflexContainer
-          className={splitter}
-          // Orientation is inverted to keep same logic in TabLayoutNode and ReflexLayoutNode (vertical==true : v, vertical==false : >)
-          orientation={props.horizontal ? 'vertical' : 'horizontal'}
-        >
-          {children}
-        </ReflexContainer>
+        The layout is empty, drop components in to fill it!
       </div>
-    </div>
+    </ReflexElement>
   );
 }
 
-registerComponent(
-  pageComponentFactory(
-    PlayerLinearLayout,
-    componentType,
-    'bars',
-    {
-      children: schemaProps.hidden(false),
-      style: schemaProps.code('Style', false, 'JSON'),
-      className: schemaProps.string('ClassName', false),
-      horizontal: schemaProps.boolean('Horizontal', false),
-      flexValues: schemaProps.hidden(false, 'object'),
-      keepSplitter: schemaProps.boolean('Splitter', false),
-    },
-    [],
-    () => ({ children: [] }),
-  ),
-);
+export function ChildrenDeserializer({
+  wegasChildren,
+  path,
+  pageId,
+  uneditable,
+  context,
+  noSplitter,
+  flexValues,
+}: ChildrenDeserializerProps<PlayerLinearLayoutProps>) {
+  const { editMode /*, onUpdate*/ } = React.useContext(pageCTX);
+
+  const showSplitter = editMode || !noSplitter;
+
+  return (
+    <>
+      {editMode && (!wegasChildren || wegasChildren.length === 0) ? (
+        <EmptyComponentContainer path={path} />
+      ) : (
+        wegasChildren?.reduce<JSX.Element[]>((old, _component, i, arr) => {
+          const content = (
+            <ReflexElement flex={flexValues && flexValues[i]}>
+              <PageDeserializer
+                key={JSON.stringify([...(path ? path : []), i])}
+                pageId={pageId}
+                path={[...(path ? path : []), i]}
+                uneditable={uneditable}
+                context={context}
+                dropzones={{ side: true }}
+              />
+            </ReflexElement>
+          );
+
+          if (showSplitter && i < arr.length - 1) {
+            const splitter = (
+              <ReflexSplitter
+              // onStopResize={handleProps => {
+              //   editMode &&
+              //     onUpdate(
+              //       {
+              //         type: CONTENT_TYPE,
+              //         props: {
+              //           flexValues: [...(flexValues?.slice(0,i) || []), ],
+              //         },
+              //       },
+              //       path,
+              //       true,
+              //     );
+              // }}
+              />
+            );
+            return [...old, content, splitter];
+          } else {
+            return [...old, content];
+          }
+        }, [])
+      )}
+    </>
+  );
+}
+
+const test = pageComponentFactory({
+  component: PlayerLinearLayout,
+  componentType: 'Layout',
+  container: {
+    isVertical,
+    ChildrenDeserializer,
+    childrenSchema: [],
+    childrenLayoutKeys: [],
+  },
+  name: CONTENT_TYPE,
+  icon: 'columns',
+  schema: {
+    vertical: schemaProps.boolean({ label: 'Vertical' }),
+    // noSplitter: schemaProps.boolean({ label: 'No splitter' }),
+    flexValues: schemaProps.hidden({ type: 'array' }),
+    ...omit(classStyleIdShema, ['id']),
+  },
+  getComputedPropsFromVariable: () => ({
+    children: [],
+  }),
+});
+
+registerComponent(test);
